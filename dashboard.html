@@ -1,0 +1,3175 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>DampingVar — Dashboard</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2"
+  }
+}
+</script>
+
+<style>
+:root{--bg:#0A0E1A;--bg2:#131C2C;--bg3:#0D1525;--border:#2A3650;--gold:#D4AF37;--gold2:#F5D76E;--green:#10B981;--blue:#38BDF8;--red:#EF4444;--amber:#F59E0B;--text:#E2E8F0;--muted:#5E7090;--muted2:#A3B3D1}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;flex-direction:column}
+.font-mono{font-family:'Courier New',monospace}
+/* Scrollbar */
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:var(--bg2)}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+/* Layout */
+#app{display:flex;flex:1;overflow:hidden}
+/* Sidebar */
+#sidebar{width:220px;min-width:220px;background:var(--bg3);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow-y:auto;transition:width .3s}
+#sidebar.collapsed{width:60px;min-width:60px}
+.sidebar-logo{padding:18px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;white-space:nowrap;overflow:hidden}
+.sidebar-logo span{font-size:18px;font-weight:900;letter-spacing:-1px}
+.sidebar-logo span em{color:var(--gold);font-style:normal}
+.sidebar-nav{flex:1;padding:12px 0}
+.nav-section{font-size:9px;color:var(--muted);font-family:'Courier New',monospace;font-weight:700;letter-spacing:2px;padding:8px 16px 4px;white-space:nowrap;overflow:hidden}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 16px;cursor:pointer;color:var(--muted2);font-size:13px;font-weight:500;transition:all .15s;white-space:nowrap;overflow:hidden;border:none;background:none;width:100%;text-align:left;position:relative}
+.nav-item:hover{background:rgba(212,175,55,.07);color:var(--text)}
+.nav-item.active{background:rgba(212,175,55,.12);color:var(--gold);border-right:2px solid var(--gold)}
+.nav-item i{width:18px;text-align:center;font-size:14px;flex-shrink:0}
+.nav-item .badge{position:absolute;right:12px;background:var(--red);color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:8px;font-family:'Courier New',monospace}
+.nav-item-sub{padding-left:34px;font-size:12px;color:var(--muted)}
+.nav-item-sub i{font-size:12px}
+.nav-item-sub.active{color:var(--gold)}
+.sidebar-bottom{padding:12px;border-top:1px solid var(--border)}
+/* Main */
+#main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+/* Topbar */
+#topbar{background:rgba(13,21,37,.97);border-bottom:1px solid var(--border);padding:10px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-shrink:0}
+.topbar-title{font-size:14px;font-weight:800;color:var(--text)}
+.topbar-right{display:flex;align-items:center;gap:10px}
+.topbar-badge{background:var(--bg2);border:1px solid var(--border);padding:5px 10px;border-radius:8px;font-size:11px;font-family:'Courier New',monospace;color:var(--muted2);display:flex;align-items:center;gap:6px}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:10px;font-size:12px;font-weight:700;cursor:pointer;border:none;transition:all .15s;font-family:inherit}
+.btn-gold{background:linear-gradient(135deg,var(--gold),var(--gold2));color:#000}
+.btn-gold:hover{opacity:.88}
+.btn-ghost{background:var(--bg2);border:1px solid var(--border);color:var(--muted2)}
+.btn-ghost:hover{border-color:var(--gold);color:var(--text)}
+.btn-green{background:linear-gradient(135deg,#10B981,#14B8A6);color:#000}
+.btn-red{background:linear-gradient(135deg,#EF4444,#DC2626);color:#fff}
+.btn-sm{padding:5px 10px;font-size:11px;border-radius:7px}
+/* Content */
+#content{flex:1;overflow-y:auto;padding:20px}
+/* Page */
+.page{display:none}
+.page.active{display:block}
+/* Cards */
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:18px}
+.card-sm{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px}
+/* Grid helpers */
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+.grid-4{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:16px}
+/* Stats card */
+.stat-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px;display:flex;align-items:center;gap:12px}
+.stat-icon{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
+.stat-label{font-size:10px;color:var(--muted);font-family:'Courier New',monospace;font-weight:700;letter-spacing:.5px}
+.stat-value{font-size:18px;font-weight:900;font-family:'Courier New',monospace;color:var(--text)}
+/* Table */
+.table-wrap{overflow-x:auto;margin-top:12px}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;padding:9px 12px;background:rgba(42,54,80,.5);color:var(--muted);font-family:'Courier New',monospace;font-weight:700;font-size:10px;letter-spacing:.5px;white-space:nowrap}
+td{padding:9px 12px;border-bottom:1px solid rgba(42,54,80,.4);color:var(--text);white-space:nowrap}
+tr:hover td{background:rgba(42,54,80,.2)}
+/* Badge */
+.tag{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;font-family:'Courier New',monospace}
+.tag-green{background:rgba(16,185,129,.12);color:var(--green);border:1px solid rgba(16,185,129,.25)}
+.tag-gold{background:rgba(212,175,55,.12);color:var(--gold);border:1px solid rgba(212,175,55,.25)}
+.tag-blue{background:rgba(56,189,248,.12);color:var(--blue);border:1px solid rgba(56,189,248,.25)}
+.tag-red{background:rgba(239,68,68,.12);color:var(--red);border:1px solid rgba(239,68,68,.25)}
+.tag-amber{background:rgba(245,158,11,.12);color:var(--amber);border:1px solid rgba(245,158,11,.25)}
+.tag-gray{background:rgba(94,112,144,.12);color:var(--muted);border:1px solid rgba(94,112,144,.25)}
+/* Form */
+.form-group{margin-bottom:14px}
+.form-label{display:block;font-size:10px;font-family:'Courier New',monospace;font-weight:700;color:var(--muted2);letter-spacing:.5px;margin-bottom:5px}
+.form-control{width:100%;background:rgba(7,11,20,.8);border:1px solid var(--border);border-radius:10px;padding:9px 12px;color:var(--text);font-size:13px;outline:none;transition:border-color .15s;font-family:inherit}
+.form-control:focus{border-color:rgba(212,175,55,.6)}
+select.form-control option{background:var(--bg3)}
+textarea.form-control{resize:vertical;min-height:80px}
+/* Modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);z-index:200;display:none;align-items:center;justify-content:center;padding:16px}
+.modal-overlay.open{display:flex}
+.modal{background:var(--bg3);border:1px solid var(--border);border-radius:18px;width:100%;max-width:540px;max-height:90vh;overflow-y:auto;box-shadow:0 24px 64px rgba(0,0,0,.7)}
+.modal-header{padding:18px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.modal-title{font-size:15px;font-weight:800}
+.modal-body{padding:20px}
+.modal-footer{padding:14px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px}
+/* Section header */
+.section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px}
+.section-title{font-size:14px;font-weight:800;color:var(--text);display:flex;align-items:center;gap:8px}
+/* Alert */
+.alert{padding:10px 14px;border-radius:10px;font-size:12px;font-family:'Courier New',monospace;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.alert-success{background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.3);color:var(--green)}
+.alert-error{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:var(--red)}
+.alert-info{background:rgba(56,189,248,.1);border:1px solid rgba(56,189,248,.3);color:var(--blue)}
+/* Loading */
+.skeleton{background:linear-gradient(90deg,var(--bg2) 25%,rgba(42,54,80,.5) 50%,var(--bg2) 75%);background-size:200% 100%;animation:shimmer 1.5s infinite;border-radius:8px}
+@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+/* Profile avatar */
+.avatar{width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,var(--gold),var(--gold2));display:flex;align-items:center;justify-content:center;font-weight:900;color:#000;font-size:15px;flex-shrink:0}
+/* Responsive */
+@media(max-width:768px){
+  #sidebar{width:60px;min-width:60px}.sidebar-logo span,.nav-item span,.nav-section,.nav-item .badge{display:none}
+  .grid-2,.grid-3,.grid-4{grid-template-columns:1fr}
+  #content{padding:12px}
+}
+/* Role chip */
+.role-chip{padding:3px 8px;border-radius:6px;font-size:10px;font-weight:700;font-family:'Courier New',monospace}
+/* Divider */
+.divider{height:1px;background:var(--border);margin:16px 0}
+/* Input file styled */
+.file-upload{border:2px dashed var(--border);border-radius:10px;padding:20px;text-align:center;cursor:pointer;color:var(--muted);font-size:12px;transition:border-color .2s}
+.file-upload:hover{border-color:rgba(212,175,55,.5)}
+/* Pill tabs */
+.pill-tabs{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap}
+.pill-tab{padding:5px 14px;border-radius:20px;font-size:11px;font-weight:700;cursor:pointer;border:1px solid var(--border);color:var(--muted);background:var(--bg2);transition:all .15s;font-family:'Courier New',monospace}
+.pill-tab.active{background:var(--gold);color:#000;border-color:var(--gold)}
+</style>
+</head>
+<body>
+
+<!-- APP SHELL -->
+<div id="app">
+  <!-- SIDEBAR -->
+  <nav id="sidebar">
+    <div class="sidebar-logo">
+      <i class="fas fa-bolt" style="color:var(--gold);font-size:18px;flex-shrink:0"></i>
+      <span>DAMPING<em>VAR</em></span>
+    </div>
+    <div class="sidebar-nav" id="sidebarNav">
+      <!-- Dinamik menü role göre render edilecek -->
+    </div>
+    <div class="sidebar-bottom">
+      <button class="nav-item" onclick="handleLogout()" style="color:var(--red)">
+        <i class="fas fa-sign-out-alt"></i><span>Çıkış Yap</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- MAIN -->
+  <div id="main">
+    <!-- TOPBAR -->
+    <div id="topbar">
+      <div style="display:flex;align-items:center;gap:12px">
+        <button onclick="toggleSidebar()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px"><i class="fas fa-bars"></i></button>
+        <div class="topbar-title" id="topbarTitle">Dashboard</div>
+      </div>
+      <div class="topbar-right">
+        <div class="topbar-badge" id="topbarRole"><i class="fas fa-circle" style="color:var(--green);font-size:7px"></i><span id="userRoleLabel">—</span></div>
+        <div class="topbar-badge"><i class="fas fa-user-circle" style="color:var(--gold)"></i><span id="topbarName">—</span></div>
+        <button class="btn btn-ghost btn-sm" onclick="navigateTo('profile')"><i class="fas fa-cog"></i></button>
+      </div>
+    </div>
+
+    <!-- CONTENT AREA -->
+    <div id="content">
+
+      <!-- ─── AUTH GUARD ─────────────────────────────────── -->
+      <div id="authGuard" style="display:flex;align-items:center;justify-content:center;height:80vh">
+        <div style="text-align:center">
+          <i class="fas fa-spinner fa-spin" style="font-size:32px;color:var(--gold);margin-bottom:16px;display:block"></i>
+          <p class="font-mono" style="color:var(--muted);font-size:12px">Kimlik doğrulanıyor...</p>
+        </div>
+      </div>
+
+      <!-- ─── PAGES ──────────────────────────────────────── -->
+      <div id="pages" style="display:none">
+
+        <!-- ══ OVERVIEW ══════════════════════════════════════════════ -->
+        <div class="page" id="page-overview">
+          <div id="statsGrid" class="grid-4" style="margin-bottom:20px"></div>
+          <div class="grid-2">
+            <div class="card">
+              <div class="section-head"><div class="section-title"><i class="fas fa-fire" style="color:var(--red)"></i>Aktif İhaleler</div><button class="btn btn-ghost btn-sm" onclick="navigateTo('auctions')">Tümü</button></div>
+              <div id="overviewAuctions"><div class="skeleton" style="height:80px"></div></div>
+            </div>
+            <div class="card">
+              <div class="section-head"><div class="section-title"><i class="fas fa-shopping-bag" style="color:var(--blue)"></i>Son Siparişler</div><button class="btn btn-ghost btn-sm" onclick="navigateTo('orders')">Tümü</button></div>
+              <div id="overviewOrders"><div class="skeleton" style="height:80px"></div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ══ TRADE SIGNALS ═════════════════════════════════════════ -->
+        <div class="page" id="page-trade-signals">
+          <div class="section-head">
+            <div class="section-title"><i class="fas fa-chart-line" style="color:var(--gold)"></i>Trade Signals</div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span id="tsPlanBadge" class="tag tag-gray">---</span>
+              <span id="tsLiveTag" class="tag tag-gray"><i class="fas fa-circle" style="font-size:7px"></i>&nbsp;OFFLINE</span>
+            </div>
+          </div>
+
+          <!-- LOADING -->
+          <div id="tsLoading" style="padding:80px 20px;text-align:center">
+            <i class="fas fa-spinner fa-spin" style="font-size:32px;color:var(--gold)"></i>
+            <div style="margin-top:14px;font-size:13px;color:var(--muted);font-family:'Courier New',monospace">Binance bağlantısı kuruluyor...</div>
+          </div>
+
+          <!-- LOCKED -->
+          <div id="tsLockedPanel" style="display:none;padding:60px 20px;text-align:center">
+            <div style="width:64px;height:64px;border-radius:50%;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.3);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-size:24px">🔒</div>
+            <div style="font-size:16px;font-weight:900;color:var(--text);margin-bottom:6px">PRO veya VIP Plan Gerekli</div>
+            <div style="font-size:12px;color:var(--muted);margin-bottom:20px">Gerçek zamanlı kripto sinyallerine erişmek için planınızı yükseltin.</div>
+            <button class="btn btn-gold" onclick="navigateTo('trade-subs')"><i class="fas fa-crown"></i>Planı Yükselt</button>
+          </div>
+
+          <!-- CONTENT -->
+          <div id="tsContent" style="display:none">
+            <div class="grid-4" style="margin-bottom:20px" id="tsPerfStats"></div>
+            <div class="section-head" style="margin-top:0">
+              <div class="section-title" style="font-size:13px"><i class="fas fa-table" style="color:var(--gold)"></i>Canlı Sinyaller</div>
+              <span id="tsUpdateTime" style="font-size:10px;color:var(--muted);font-family:'Courier New',monospace"></span>
+            </div>
+            <div class="table-wrap"><table>
+              <thead><tr>
+                <th>SEMBOL</th><th>FAZ</th><th>SİNYAL</th><th>GÜVEN</th>
+                <th>ENTRY</th><th>GÜNCEL</th><th>KAR %</th><th>ZAMAN</th>
+              </tr></thead>
+              <tbody id="tsTable"><tr><td colspan="8" style="text-align:center;padding:24px;color:var(--muted)"><i class="fas fa-spinner fa-spin"></i> Veriler alınıyor...</td></tr></tbody>
+            </table></div>
+          </div>
+        </div>
+
+        <div class="page" id="page-products">
+          <div class="section-head">
+            <div class="section-title"><i class="fas fa-boxes" style="color:var(--gold)"></i>Ürünlerim</div>
+            <button class="btn btn-gold" onclick="openProductModal()"><i class="fas fa-plus"></i>Yeni Ürün</button>
+          </div>
+          <div class="pill-tabs" id="productFilterTabs">
+            <div class="pill-tab active" onclick="filterProducts('all',this)">Tümü</div>
+            <div class="pill-tab" onclick="filterProducts('active',this)">Aktif</div>
+            <div class="pill-tab" onclick="filterProducts('passive',this)">Pasif</div>
+            <div class="pill-tab" onclick="filterProducts('out_of_stock',this)">Stok Bitti</div>
+          </div>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Ürün</th><th>Kategori</th><th>Fiyat</th><th>Stok</th><th>Satış Tipi</th><th>Durum</th><th>İşlem</th></tr></thead>
+            <tbody id="productsTable"><tr><td colspan="7" style="text-align:center;padding:24px;color:var(--muted)"><i class="fas fa-spinner fa-spin"></i> Yükleniyor...</td></tr></tbody>
+          </table></div>
+        </div>
+
+        <!-- ══ İHALELER ══════════════════════════════════════════════ -->
+        <div class="page" id="page-auctions">
+          <div class="section-head">
+            <div class="section-title"><i class="fas fa-gavel" style="color:var(--amber)"></i>İhaleler</div>
+            <button class="btn btn-gold" onclick="openAuctionModal()"><i class="fas fa-plus"></i>İhale Aç</button>
+          </div>
+          <div class="pill-tabs">
+            <div class="pill-tab active" onclick="filterAuctions('all',this)">Tümü</div>
+            <div class="pill-tab" onclick="filterAuctions('active',this)">Aktif</div>
+            <div class="pill-tab" onclick="filterAuctions('ended',this)">Biten</div>
+            <div class="pill-tab" onclick="filterAuctions('upcoming',this)">Bekleyen</div>
+          </div>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Ürün</th><th>Başl. Fiyat</th><th>Mevcut Teklif</th><th>Teklif #</th><th>Bitiş</th><th>Tip</th><th>Durum</th><th>İşlem</th></tr></thead>
+            <tbody id="auctionsTable"><tr><td colspan="8" style="text-align:center;padding:24px;color:var(--muted)"><i class="fas fa-spinner fa-spin"></i></td></tr></tbody>
+          </table></div>
+        </div>
+
+        <!-- ══ İHALE GEÇMİŞİ ══════════════════════════════════════════ -->
+        <div class="page" id="page-auction-history">
+          <div class="section-head"><div class="section-title"><i class="fas fa-history" style="color:var(--blue)"></i>İhale Geçmişi</div></div>
+          <div class="table-wrap"><table>
+            <thead><tr><th>İhale</th><th>Başl. Fiyat</th><th>Kazanan Teklif</th><th>Teklif #</th><th>Kazanan</th><th>Tarih</th><th>Durum</th></tr></thead>
+            <tbody id="auctionHistoryTable"><tr><td colspan="7" style="text-align:center;padding:24px;color:var(--muted)"><i class="fas fa-spinner fa-spin"></i></td></tr></tbody>
+          </table></div>
+        </div>
+
+        <!-- ══ KAZANILAN İHALELER ══════════════════════════════════════ -->
+        <div class="page" id="page-won-auctions">
+          <div class="section-head"><div class="section-title"><i class="fas fa-trophy" style="color:var(--gold)"></i>Kazandığım İhaleler</div></div>
+          <div class="table-wrap"><table>
+            <thead><tr><th>İhale</th><th>Kazanan Teklif</th><th>Satıcı</th><th>Tarih</th><th>Sipariş</th></tr></thead>
+            <tbody id="wonAuctionsTable"><tr><td colspan="5" style="text-align:center;padding:24px;color:var(--muted)"><i class="fas fa-spinner fa-spin"></i></td></tr></tbody>
+          </table></div>
+        </div>
+
+        <!-- ══ SİPARİŞLER ════════════════════════════════════════════ -->
+        <div class="page" id="page-orders">
+          <div class="section-head"><div class="section-title"><i class="fas fa-shopping-cart" style="color:var(--blue)"></i>Sipariş Listesi</div></div>
+          <div class="pill-tabs">
+            <div class="pill-tab active" onclick="filterOrders('all',this)">Tümü</div>
+            <div class="pill-tab" onclick="filterOrders('PENDING_PAYMENT',this)">Ödeme Bekliyor</div>
+            <div class="pill-tab" onclick="filterOrders('PROCESSING',this)">Hazırlanıyor</div>
+            <div class="pill-tab" onclick="filterOrders('SHIPPED',this)">Kargoda</div>
+            <div class="pill-tab" onclick="filterOrders('DELIVERED',this)">Teslim</div>
+          </div>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Sipariş No</th><th>Ürün</th><th id="ordersPartyHeader">Karşı Taraf</th><th>Tutar</th><th>Ödeme</th><th>Kargo</th><th>Escrow</th><th>Tarih</th><th>İşlem</th></tr></thead>
+            <tbody id="ordersTable"><tr><td colspan="8" style="text-align:center;padding:24px;color:var(--muted)"><i class="fas fa-spinner fa-spin"></i></td></tr></tbody>
+          </table></div>
+
+          <!-- ══ CANLI SATIŞ / BAYİ VİTRİNİ SİPARİŞLERİ (store_orders) ══════
+               MİMARİ NOT: orders/store_orders KONSOLİDASYON — Faz 1.
+               store_orders/catalog_products kalıcı mimari olarak kabul edildi;
+               orders (bireysel ilan modeli) donduruldu, yeni geliştirme almaz.
+               Bu iki tablo farklı kolon/aksiyon setlerine sahip olduğu için
+               (escrow/fatura/PDF akışı store_orders'ta henüz YOK) TEK bir
+               tabloda zorla birleştirmek yanlış bilgi verirdi — bu yüzden
+               AYRI ama HER İKİSİ DE GÖRÜNÜR bir ikinci bölüm eklendi. Daha
+               önce bu siparişler dealer'ın kendi "Siparişlerim" ekranında
+               HİÇ görünmüyordu — bu Faz 1'in çözdüğü kritik problem. ═══ -->
+          <div class="section-head" style="margin-top:24px">
+            <div class="section-title"><i class="fas fa-video" style="color:var(--red)"></i>Canlı Satış / Bayi Vitrini Siparişleri</div>
+            <span class="tag tag-gray" style="font-size:10px">Yeni sistem — fatura/escrow entegrasyonu henüz yok</span>
+          </div>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Sipariş</th><th>Mağaza</th><th>Ürünler</th><th>Tutar</th><th>Ödeme</th><th>Durum</th><th>Kaynak</th><th>Tarih</th></tr></thead>
+            <tbody id="storeOrdersTable"><tr><td colspan="8" style="text-align:center;padding:24px;color:var(--muted)"><i class="fas fa-spinner fa-spin"></i></td></tr></tbody>
+          </table></div>
+        </div>
+
+        <!-- ══ FATURALAR ══════════════════════════════════════════════ -->
+        <div class="page" id="page-invoices">
+          <div class="section-head">
+            <div class="section-title"><i class="fas fa-file-invoice" style="color:var(--green)"></i><span id="invoicesPageTitle">Fatura Listesi</span></div>
+            <button class="btn btn-gold" onclick="openInvoiceCreateModal()"><i class="fas fa-plus"></i>Fatura Oluştur</button>
+          </div>
+          <!-- Filtreler -->
+          <div class="card" style="margin-bottom:14px;padding:12px 16px">
+            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+              <div style="flex:1;min-width:140px">
+                <div class="form-label" style="margin-bottom:4px">FİLTRE TİP</div>
+                <div class="pill-tabs" id="invoiceTypeTabs" style="margin-bottom:0">
+                  <div class="pill-tab active" onclick="filterInvoiceType('all',this)">Tümü</div>
+                  <div class="pill-tab" onclick="filterInvoiceType('sales',this)">Satış</div>
+                  <div class="pill-tab" onclick="filterInvoiceType('purchase',this)">Alış</div>
+                  <div class="pill-tab" onclick="filterInvoiceType('e_invoice',this)">e-Fatura</div>
+                  <div class="pill-tab" onclick="filterInvoiceType('e_sales_waybill',this)">e-Satış İrs.</div>
+                  <div class="pill-tab" onclick="filterInvoiceType('e_transport_waybill',this)">e-Taşıma İrs.</div>
+                </div>
+              </div>
+              <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+                <div>
+                  <div class="form-label" style="margin-bottom:4px">BAŞL. TARİH</div>
+                  <input class="form-control" type="date" id="invFilterDateFrom" style="width:140px" onchange="applyInvoiceFilters()">
+                </div>
+                <div>
+                  <div class="form-label" style="margin-bottom:4px">BİTİŞ TARİH</div>
+                  <input class="form-control" type="date" id="invFilterDateTo" style="width:140px" onchange="applyInvoiceFilters()">
+                </div>
+                <div id="invUserFilterWrap" style="display:none">
+                  <div class="form-label" style="margin-bottom:4px">KULLANICI</div>
+                  <input class="form-control" id="invFilterUser" placeholder="Firma / Ad ara..." style="width:160px" oninput="applyInvoiceFilters()">
+                </div>
+                <button class="btn btn-ghost btn-sm" onclick="clearInvoiceFilters()"><i class="fas fa-times"></i>Temizle</button>
+              </div>
+            </div>
+          </div>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Fatura No</th><th>Sipariş</th><th id="invPartyHeader">Alıcı / Satıcı</th><th>Tutar</th><th>KDV</th><th>Tip</th><th>Tarih</th><th>Durum</th><th>Belgeler</th></tr></thead>
+            <tbody id="invoicesTable"><tr><td colspan="9" style="text-align:center;padding:24px;color:var(--muted)"><i class="fas fa-spinner fa-spin"></i></td></tr></tbody>
+          </table></div>
+        </div>
+
+        <!-- ══ LOJİSTİK ═══════════════════════════════════════════════ -->
+        <div class="page" id="page-logistics">
+          <div class="section-head">
+            <div class="section-title"><i class="fas fa-truck" style="color:var(--blue)"></i>Lojistik & Kargo</div>
+            <button class="btn btn-gold" onclick="openWaybillModal()"><i class="fas fa-plus"></i>İrsaliye Gir</button>
+          </div>
+          <div class="table-wrap"><table>
+            <thead><tr><th>İrsaliye No</th><th>Sipariş</th><th>Nakliyeci</th><th>Araç</th><th>Sürücü</th><th>Yükleme Tarihi</th><th>Durum</th><th>PDF</th></tr></thead>
+            <tbody id="logisticsTable"><tr><td colspan="8" style="text-align:center;padding:24px;color:var(--muted)"><i class="fas fa-spinner fa-spin"></i></td></tr></tbody>
+          </table></div>
+        </div>
+
+        <!-- ══ MUHASEBE ════════════════════════════════════════════════ -->
+        <div class="page" id="page-accounting">
+          <div class="section-head"><div class="section-title"><i class="fas fa-calculator" style="color:var(--amber)"></i>Muhasebe</div></div>
+          <div class="grid-4" style="margin-bottom:20px" id="accountingStats"></div>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Sipariş No</th><th>Tutar</th><th>Platform Kom.</th><th>Temsilci Kom.</th><th>Net Satıcı</th><th>Fatura</th><th>Durum</th><th>Onay</th></tr></thead>
+            <tbody id="accountingTable"><tr><td colspan="8" style="text-align:center;padding:24px;color:var(--muted)"><i class="fas fa-spinner fa-spin"></i></td></tr></tbody>
+          </table></div>
+        </div>
+
+        <!-- ══ FİNANS ══════════════════════════════════════════════════ -->
+        <div class="page" id="page-finance">
+          <div class="section-head"><div class="section-title"><i class="fas fa-landmark" style="color:var(--gold)"></i>Finans & Escrow</div></div>
+          <div class="grid-4" style="margin-bottom:20px" id="financeStats"></div>
+          <div class="grid-2">
+            <div>
+              <div class="section-head"><div class="section-title" style="font-size:13px"><i class="fas fa-lock" style="color:var(--amber)"></i>Escrow Cüzdanları</div></div>
+              <div class="table-wrap"><table>
+                <thead><tr><th>Sipariş</th><th>Alıcı</th><th>Tutar</th><th>Durum</th><th>İşlem</th></tr></thead>
+                <tbody id="escrowTable"><tr><td colspan="5" style="text-align:center;padding:24px;color:var(--muted)"><i class="fas fa-spinner fa-spin"></i></td></tr></tbody>
+              </table></div>
+            </div>
+            <div>
+              <div class="section-head"><div class="section-title" style="font-size:13px"><i class="fas fa-money-bill-transfer" style="color:var(--green)"></i>Ödemeler</div></div>
+              <div class="table-wrap"><table>
+                <thead><tr><th>Sipariş</th><th>Tutar</th><th>Yöntem</th><th>Durum</th><th>İşlem</th></tr></thead>
+                <tbody id="paymentsTable"><tr><td colspan="5" style="text-align:center;padding:24px;color:var(--muted)"><i class="fas fa-spinner fa-spin"></i></td></tr></tbody>
+              </table></div>
+            </div>
+          </div>
+        </div>
+
+
+        <!-- ===== ABONELIK ODEMELERI (Trade Signals alt menusu) ===== -->
+        <div class="page" id="page-trade-subs">
+          <div class="section-head">
+            <div class="section-title"><i class="fas fa-coins" style="color:var(--gold)"></i>Trade Signals — Abonelik Odemeleri</div>
+            <button class="btn btn-ghost btn-sm" onclick="loadTradeSubs()"><i class="fas fa-sync"></i>Yenile</button>
+          </div>
+          <div class="grid-4" style="margin-bottom:20px" id="tradeSubsStats"></div>
+          <div class="table-wrap"><table>
+            <thead><tr>
+              <th>Kullanici</th><th>Plan</th><th>Tutar</th><th>Memo</th><th>TX Hash</th><th>Durum</th><th>Tarih</th><th>Islem</th>
+            </tr></thead>
+            <tbody id="tradeSubsTable"><tr><td colspan="8" style="text-align:center;padding:24px;color:var(--muted)"><i class="fas fa-spinner fa-spin"></i></td></tr></tbody>
+          </table></div>
+        </div>
+        <!-- ══ PROFİL ══════════════════════════════════════════════════ -->
+        <div class="page" id="page-profile">
+          <div class="grid-2">
+            <div class="card">
+              <div class="section-title" style="margin-bottom:16px"><i class="fas fa-user-circle" style="color:var(--gold)"></i>Profil Bilgileri</div>
+              <div id="profileForm"></div>
+              <button class="btn btn-gold" style="width:100%;margin-top:8px" onclick="saveProfile()"><i class="fas fa-save"></i>Kaydet</button>
+            </div>
+            <div class="card">
+              <div class="section-title" style="margin-bottom:16px"><i class="fas fa-shield-alt" style="color:var(--blue)"></i>Hesap Bilgileri</div>
+              <div id="profileStats"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ══ CANLI SATIŞ (module: live-sales.js) ═══════════════════════ -->
+        <!-- İçerik statik değil — modules/live-sales.js tarafından mount ediliyor -->
+        <div class="page" id="page-live-sales"></div>
+
+        <!-- ══ ÜRÜN SEÇİMİ (module: dealer-catalog.js) ═══════════════════ -->
+        <div class="page" id="page-dealer-catalog"></div>
+
+        <!-- ══ BAYİ PERFORMANSI (module: dealer-performance.js) ══════════ -->
+        <div class="page" id="page-dealer-performance"></div>
+
+        <!-- ══ TEDARİKÇİ PANELİ (module: supplier.js) ═════════════════════ -->
+        <!-- İçerik statik değil — modules/supplier.js tarafından mount ediliyor -->
+        <div class="page" id="page-supplier"></div>
+
+        <!-- ══ FRANCHISE PANELİ (module: franchise.js) ═══════════════════ -->
+        <div class="page" id="page-franchise"></div>
+
+        <!-- ══ TEDARİK & KOMİSYON YÖNETİMİ (module: catalog-admin.js) ═══ -->
+        <div class="page" id="page-catalog-admin"></div>
+
+      </div><!-- /pages -->
+    </div><!-- /content -->
+  </div><!-- /main -->
+</div><!-- /app -->
+
+<!-- ═══════════════════════════ MODALS ═══════════════════════════════ -->
+
+<!-- Ürün Modalı -->
+<div class="modal-overlay" id="productModal">
+  <div class="modal" style="max-width:620px">
+    <div class="modal-header">
+      <div class="modal-title"><i class="fas fa-box" style="color:var(--gold);margin-right:8px"></i><span id="productModalTitle">Yeni Ürün</span></div>
+      <button onclick="closeModal('productModal')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:18px"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body">
+      <div id="productModalAlert"></div>
+      <input type="hidden" id="productId">
+      <div class="grid-2">
+        <div class="form-group"><label class="form-label">ÜRÜN ADI</label><input class="form-control" id="pTitle" placeholder="Ürün adı"></div>
+        <div class="form-group"><label class="form-label">KATEGORİ</label><input class="form-control" id="pCategory" placeholder="Kategori"></div>
+      </div>
+      <div class="grid-2">
+        <div class="form-group"><label class="form-label">FİYAT (₺)</label><input class="form-control" type="number" id="pPrice" placeholder="0"></div>
+        <div class="form-group"><label class="form-label">STOK</label><input class="form-control" type="number" id="pStock" placeholder="0"></div>
+      </div>
+      <div class="grid-2">
+        <div class="form-group"><label class="form-label">SATIŞ TİPİ</label>
+          <select class="form-control" id="pSaleType" onchange="onSaleTypeChange()">
+            <option value="normal">Normal (Damping)</option>
+            <option value="trink">Trink Sat</option>
+            <option value="auction">İhale</option>
+          </select>
+        </div>
+        <div class="form-group"><label class="form-label">KDV (%)</label>
+          <select class="form-control" id="pTaxRate">
+            <option value="20">%20</option><option value="10">%10</option><option value="1">%1</option><option value="0">%0</option>
+          </select>
+        </div>
+      </div>
+      <div id="trinkFields" style="display:none">
+        <div class="form-group"><label class="form-label">TRİNK FİYATI (₺)</label><input class="form-control" type="number" id="pTrinkPrice" placeholder="Trink fiyatı"></div>
+      </div>
+      <div id="auctionFields" style="display:none">
+        <div class="grid-2">
+          <div class="form-group"><label class="form-label">BAŞLANGIÇ FİYATI (₺)</label><input class="form-control" type="number" id="pAuctionStart" placeholder="Başlangıç fiyatı"></div>
+          <div class="form-group"><label class="form-label">İHALE BİTİŞ TARİHİ</label><input class="form-control" type="datetime-local" id="pAuctionEnd"></div>
+        </div>
+      </div>
+      <div class="form-group"><label class="form-label">SEKTÖR</label>
+        <select class="form-control" id="pSector">
+          <option value="elektronik">Elektronik</option><option value="tekstil">Tekstil</option>
+          <option value="gida">Gıda & Tarım</option><option value="insaat">İnşaat</option>
+          <option value="otomotiv">Otomotiv</option><option value="lojistik">Lojistik</option><option value="diger">Diğer</option>
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">AÇIKLAMA</label><textarea class="form-control" id="pDesc" placeholder="Ürün açıklaması"></textarea></div>
+      <div class="form-group"><label class="form-label">GÖRSEL URL</label><input class="form-control" id="pImageUrl" placeholder="https://..."></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('productModal')">İptal</button>
+      <button class="btn btn-gold" onclick="saveProduct()"><i class="fas fa-save"></i>Kaydet</button>
+    </div>
+  </div>
+</div>
+
+<!-- İhale Modalı -->
+<div class="modal-overlay" id="auctionModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title"><i class="fas fa-gavel" style="color:var(--amber);margin-right:8px"></i>Yeni İhale Aç</div>
+      <button onclick="closeModal('auctionModal')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:18px"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body">
+      <div id="auctionModalAlert"></div>
+      <div class="form-group"><label class="form-label">ÜRÜN SEÇ</label>
+        <select class="form-control" id="aProductId"><option value="">— Ürün seçin —</option></select>
+      </div>
+      <div class="form-group"><label class="form-label">İHALE TİPİ</label>
+        <select class="form-control" id="aType">
+          <option value="ascending">Artan İhale (Satıcı — en yüksek teklif kazanır)</option>
+          <option value="descending">Azalan İhale (Alıcı — en düşük teklif kazanır)</option>
+        </select>
+      </div>
+      <div class="grid-2">
+        <div class="form-group"><label class="form-label">BAŞLANGIÇ FİYATI (₺)</label><input class="form-control" type="number" id="aStartPrice" placeholder="0"></div>
+        <div class="form-group"><label class="form-label">TEKLİF ARTIŞI (₺)</label><input class="form-control" type="number" id="aBidIncrement" placeholder="250" value="250"></div>
+      </div>
+      <div class="grid-2">
+        <div class="form-group"><label class="form-label">SÜRE (SAAT)</label><input class="form-control" type="number" id="aDuration" placeholder="12" value="12"></div>
+        <div class="form-group"><label class="form-label">MİKTAR</label><input class="form-control" id="aQuantity" placeholder="örn: 100"></div>
+      </div>
+      <div class="form-group"><label class="form-label">BİRİM</label>
+        <select class="form-control" id="aQuantityUnit">
+          <option value="adet">Adet</option><option value="kg">Kg</option><option value="ton">Ton</option><option value="lt">Litre</option><option value="paket">Paket</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('auctionModal')">İptal</button>
+      <button class="btn btn-gold" onclick="saveAuction()"><i class="fas fa-gavel"></i>İhale Başlat</button>
+    </div>
+  </div>
+</div>
+
+<!-- Fatura Oluştur Modalı (Sekmeli) -->
+<div class="modal-overlay" id="invoiceCreateModal">
+  <div class="modal" style="max-width:680px">
+    <div class="modal-header">
+      <div class="modal-title"><i class="fas fa-file-invoice" style="color:var(--gold);margin-right:8px"></i>Fatura / İrsaliye Oluştur</div>
+      <button onclick="closeModal('invoiceCreateModal')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:18px"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body" style="padding-top:14px">
+      <div id="invoiceCreateAlert"></div>
+      <!-- Sekmeler -->
+      <div class="pill-tabs" id="invCreateTabs" style="margin-bottom:18px">
+        <div class="pill-tab active" onclick="switchInvTab('e_invoice',this)"><i class="fas fa-file-invoice" style="margin-right:4px"></i>e-Fatura</div>
+        <div class="pill-tab" onclick="switchInvTab('e_sales_waybill',this)"><i class="fas fa-file-alt" style="margin-right:4px"></i>e-Satış İrsaliyesi</div>
+        <div class="pill-tab" onclick="switchInvTab('e_transport_waybill',this)"><i class="fas fa-truck" style="margin-right:4px"></i>e-Taşıma İrsaliyesi</div>
+      </div>
+
+      <!-- Sipariş Bilgisi (Fatura Kes'ten gelince gösterilir) -->
+      <div id="invCrOrderBanner" style="display:none;margin-bottom:16px">
+        <div class="card-sm" style="background:rgba(212,175,55,.05);border-color:rgba(212,175,55,.25)">
+          <div style="font-size:10px;font-family:'Courier New',monospace;font-weight:700;color:var(--gold);margin-bottom:6px">
+            <i class="fas fa-link"></i> SİPARİŞTEN GELEN BİLGİLER
+          </div>
+          <div id="invCrOrderInfo" style="font-size:12px;font-family:'Courier New',monospace;color:var(--muted2);line-height:1.8"></div>
+        </div>
+      </div>
+      <input type="hidden" id="invCrOrderId">
+
+      <!-- ── e-FATURA SEKMESİ ── -->
+      <div id="invTab_e_invoice">
+        <div class="grid-2">
+          <div class="form-group"><label class="form-label">FATURA NO *</label><input class="form-control font-mono" id="invCrNumber" placeholder="e.g. EFA-2026-001"></div>
+          <div class="form-group"><label class="form-label">FATURA TARİHİ *</label><input class="form-control" type="date" id="invCrDate"></div>
+        </div>
+        <div class="grid-2">
+          <div class="form-group"><label class="form-label">TUTAR (₺)</label><input class="form-control font-mono" type="number" id="invCrAmount" placeholder="0" oninput="calcInvTotal()"></div>
+          <div class="form-group"><label class="form-label">KDV (%)</label>
+            <select class="form-control" id="invCrTax" onchange="calcInvTotal()">
+              <option value="20">%20</option><option value="10">%10</option><option value="1">%1</option><option value="0">%0</option>
+            </select>
+          </div>
+        </div>
+        <div id="invCrTotalBox" style="display:none;background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.2);border-radius:10px;padding:10px 14px;margin-bottom:12px;font-family:'Courier New',monospace;font-size:12px">
+          <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">Matrah</span><span id="invCrBase"></span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">KDV</span><span id="invCrTaxAmt"></span></div>
+          <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:900;color:var(--green);border-top:1px solid rgba(255,255,255,.1);margin-top:6px;padding-top:6px"><span>TOPLAM</span><span id="invCrTotal"></span></div>
+        </div>
+        <div class="form-group"><label class="form-label">FATURA TİPİ</label>
+          <select class="form-control" id="invCrType">
+            <option value="sales">Satış Faturası</option>
+            <option value="purchase">Alış Faturası</option>
+            <option value="commission">Komisyon Faturası</option>
+            <option value="expense">Gider Faturası</option>
+          </select>
+        </div>
+        <div class="form-group"><label class="form-label">AÇIKLAMA / MAL HİZMET</label><textarea class="form-control" id="invCrDesc" placeholder="Fatura açıklaması..." rows="2"></textarea></div>
+        <div class="form-group">
+          <label class="form-label">e-FATURA GÖRSELİ / PDF YÜKLE</label>
+          <div class="file-upload" onclick="document.getElementById('invCrFile').click()">
+            <i class="fas fa-cloud-upload-alt" style="font-size:22px;margin-bottom:6px;display:block;color:var(--gold)"></i>
+            <span id="invCrFileName">e-Fatura PDF veya görsel seçin</span>
+          </div>
+          <input type="file" id="invCrFile" accept=".pdf,.jpg,.jpeg,.png" style="display:none" onchange="onInvFileSelect('invCrFile','invCrFileName','invCrPreview')">
+          <div id="invCrPreview" style="display:none;margin-top:8px"></div>
+        </div>
+      </div>
+
+      <!-- ── e-SATIŞ İRSALİYESİ SEKMESİ ── -->
+      <div id="invTab_e_sales_waybill" style="display:none">
+        <div class="grid-2">
+          <div class="form-group"><label class="form-label">İRSALİYE NO *</label><input class="form-control font-mono" id="invCrSwNumber" placeholder="e.g. ESI-2026-001"></div>
+          <div class="form-group"><label class="form-label">İRSALİYE TARİHİ *</label><input class="form-control" type="date" id="invCrSwDate"></div>
+        </div>
+        <div class="grid-2">
+          <div class="form-group"><label class="form-label">TUTAR (₺)</label><input class="form-control font-mono" type="number" id="invCrSwAmount" placeholder="0"></div>
+          <div class="form-group"><label class="form-label">KDV (%)</label>
+            <select class="form-control" id="invCrSwTax">
+              <option value="20">%20</option><option value="10">%10</option><option value="1">%1</option><option value="0">%0</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group"><label class="form-label">TESLİM YERİ</label><input class="form-control" id="invCrSwDelivAddr" placeholder="Teslim adresi"></div>
+        <div class="form-group"><label class="form-label">MAL TANIMI</label><textarea class="form-control" id="invCrSwGoods" placeholder="Teslim edilen mal tanımı..." rows="2"></textarea></div>
+        <div class="form-group">
+          <label class="form-label">e-SATIŞ İRSALİYE GÖRSELİ / PDF</label>
+          <div class="file-upload" onclick="document.getElementById('invCrSwFile').click()">
+            <i class="fas fa-file-alt" style="font-size:22px;margin-bottom:6px;display:block;color:var(--blue)"></i>
+            <span id="invCrSwFileName">e-Satış İrsaliyesi PDF veya görsel seçin</span>
+          </div>
+          <input type="file" id="invCrSwFile" accept=".pdf,.jpg,.jpeg,.png" style="display:none" onchange="onInvFileSelect('invCrSwFile','invCrSwFileName','invCrSwPreview')">
+          <div id="invCrSwPreview" style="display:none;margin-top:8px"></div>
+        </div>
+      </div>
+
+      <!-- ── e-TAŞIMA İRSALİYESİ SEKMESİ ── -->
+      <div id="invTab_e_transport_waybill" style="display:none">
+        <div class="grid-2">
+          <div class="form-group"><label class="form-label">İRSALİYE NO *</label><input class="form-control font-mono" id="invCrTwNumber" placeholder="e.g. ETI-2026-001"></div>
+          <div class="form-group"><label class="form-label">İRSALİYE TARİHİ *</label><input class="form-control" type="date" id="invCrTwDate"></div>
+        </div>
+        <div class="grid-2">
+          <div class="form-group"><label class="form-label">ARAÇ PLAKA</label><input class="form-control font-mono" id="invCrTwPlate" placeholder="34 ABC 001"></div>
+          <div class="form-group"><label class="form-label">SÜRÜCÜ ADI</label><input class="form-control" id="invCrTwDriver" placeholder="Sürücü adı"></div>
+        </div>
+        <div class="grid-2">
+          <div class="form-group"><label class="form-label">YÜKLEME ADRESİ</label><input class="form-control" id="invCrTwLoadAddr" placeholder="Yükleme yeri"></div>
+          <div class="form-group"><label class="form-label">TESLİM ADRESİ</label><input class="form-control" id="invCrTwDelivAddr" placeholder="Teslimat yeri"></div>
+        </div>
+        <div class="form-group"><label class="form-label">TAŞINAN MAL TANIMI</label><textarea class="form-control" id="invCrTwGoods" placeholder="Taşınan malın tanımı, miktarı..." rows="2"></textarea></div>
+        <div class="form-group">
+          <label class="form-label">e-TAŞIMA İRSALİYE GÖRSELİ / PDF</label>
+          <div class="file-upload" onclick="document.getElementById('invCrTwFile').click()">
+            <i class="fas fa-truck" style="font-size:22px;margin-bottom:6px;display:block;color:var(--amber)"></i>
+            <span id="invCrTwFileName">e-Taşıma İrsaliyesi PDF veya görsel seçin</span>
+          </div>
+          <input type="file" id="invCrTwFile" accept=".pdf,.jpg,.jpeg,.png" style="display:none" onchange="onInvFileSelect('invCrTwFile','invCrTwFileName','invCrTwPreview')">
+          <div id="invCrTwPreview" style="display:none;margin-top:8px"></div>
+        </div>
+      </div>
+
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('invoiceCreateModal')">İptal</button>
+      <button class="btn btn-gold" onclick="saveInvoiceCreate()"><i class="fas fa-save"></i>Kaydet</button>
+    </div>
+  </div>
+</div>
+
+<!-- Fatura Görüntüle Modalı -->
+<div class="modal-overlay" id="invoiceViewModal">
+  <div class="modal" style="max-width:600px">
+    <div class="modal-header">
+      <div class="modal-title"><i class="fas fa-file-invoice-dollar" style="color:var(--gold);margin-right:8px"></i>Fatura / İrsaliye Detayı</div>
+      <button onclick="closeModal('invoiceViewModal')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:18px"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body" id="invoiceViewBody"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('invoiceViewModal')">Kapat</button>
+      <button class="btn btn-gold" onclick="printInvoicePDF()"><i class="fas fa-print"></i>PDF İndir</button>
+    </div>
+  </div>
+</div>
+
+<!-- İrsaliye Modalı -->
+<div class="modal-overlay" id="waybillModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title"><i class="fas fa-truck" style="color:var(--blue);margin-right:8px"></i>İrsaliye Gir</div>
+      <button onclick="closeModal('waybillModal')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:18px"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body">
+      <div id="waybillModalAlert"></div>
+      <div class="grid-2">
+        <div class="form-group"><label class="form-label">İRSALİYE NO</label><input class="form-control" id="wbNumber" placeholder="IRS-2026-001"></div>
+        <div class="form-group"><label class="form-label">YÜKLEME TARİHİ</label><input class="form-control" type="date" id="wbDate"></div>
+      </div>
+      <div class="form-group"><label class="form-label">SİPARİŞ</label>
+        <select class="form-control" id="wbOrderId"><option value="">— Sipariş seçin —</option></select>
+      </div>
+      <div class="grid-2">
+        <div class="form-group"><label class="form-label">NAKLİYE FİRMASI</label>
+          <select class="form-control" id="wbCompany"><option value="">— Seçin —</option></select>
+        </div>
+        <div class="form-group"><label class="form-label">NAKLİYE BEDELİ (₺)</label><input class="form-control" type="number" id="wbFreight" placeholder="0"></div>
+      </div>
+      <div class="form-group"><label class="form-label">YÜKLEME ADRESİ</label><input class="form-control" id="wbLoadAddr" placeholder="Yükleme adresi"></div>
+      <div class="form-group"><label class="form-label">TESLİM ADRESİ</label><input class="form-control" id="wbDelivAddr" placeholder="Teslimat adresi"></div>
+      <div class="form-group"><label class="form-label">MAL TANIMI</label><textarea class="form-control" id="wbGoods" placeholder="Taşınan malın açıklaması"></textarea></div>
+      <div class="form-group">
+        <label class="form-label">PDF YÜKLE (opsiyonel)</label>
+        <div class="file-upload" onclick="document.getElementById('wbPdfFile').click()">
+          <i class="fas fa-cloud-upload-alt" style="font-size:20px;margin-bottom:6px;display:block;color:var(--blue)"></i>
+          <span id="wbPdfName">PDF dosyası seçin</span>
+        </div>
+        <input type="file" id="wbPdfFile" accept=".pdf" style="display:none" onchange="onFileSelect('wbPdfFile','wbPdfName')">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('waybillModal')">İptal</button>
+      <button class="btn btn-gold" onclick="saveWaybill()"><i class="fas fa-save"></i>İrsaliyeyi Kaydet</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast" style="position:fixed;bottom:24px;right:24px;z-index:999;display:none;max-width:320px">
+  <div id="toastInner" style="padding:12px 16px;border-radius:12px;font-size:12px;font-family:'Courier New',monospace;font-weight:700;display:flex;align-items:center;gap:8px;box-shadow:0 8px 24px rgba(0,0,0,.5)"></div>
+</div>
+
+<!-- ═══════════════════════ JAVASCRIPT ═══════════════════════════════ -->
+<script type="module">
+import { createClient } from '@supabase/supabase-js';
+
+// MODÜL SİSTEMİ — tamamı dinamik + try/catch ile yükleniyor. Bilinçli seçim:
+// modules/ klasöründeki HERHANGİ bir dosya (registry.js, live-sales.js,
+// supplier.js) 404 verirse, syntax hatası içerirse veya deploy'a dahil
+// edilmemişse, statik `import` kullanılsaydı TÜM bu script çalışmayı
+// durdurur ve init() hiç çağrılmazdı — "Kimlik doğrulanıyor..." ekranda
+// sonsuza kadar asılı kalırdı (yaşanan hata tam olarak buydu).
+// Şimdi: başarısız olursa no-op fallback devreye giriyor, dashboard'un geri
+// kalanı (login, overview, products, orders, finans, ihaleler...) HER
+// KOŞULDA normal çalışmaya devam ediyor; sadece live-sales/supplier
+// sayfaları o oturumda kullanılamaz olur.
+let activateModule = () => false;
+let deactivateModule = () => {};
+let isRegisteredPage = () => false;
+try {
+  const registry = await import('./modules/registry.js');
+  activateModule = registry.activateModule;
+  deactivateModule = registry.deactivateModule;
+  isRegisteredPage = registry.isRegisteredPage;
+  await import('./modules/live-sales.js');
+  await import('./modules/dealer-catalog.js');
+  await import('./modules/dealer-performance.js');
+  await import('./modules/supplier.js');
+  await import('./modules/franchise.js');
+  await import('./modules/catalog-admin.js');
+} catch (e) {
+  console.error('[ModuleRegistry] Yeni modüller yüklenemedi (dashboard genel işlevi ETKİLENMEZ):', e);
+}
+
+const SUPABASE_URL = 'https://slajjrtfwncwlglhwhzg.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNsYWpqcnRmd25jd2xnbGh3aHpnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkwNzYzMTEsImV4cCI6MjA5NDY1MjMxMX0.krwWYXRQS7JhU9T5WRdsW2CRdefFJPSUCmJsLKAL0H8';
+const PLATFORM_FEE = 10;
+const REP_FEE = 2;
+
+const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: {
+    persistSession: true,
+    storage: window.localStorage,
+    storageKey: 'sb-slajjrtfwncwlglhwhzg-auth-token', // React index.html ile AYNI key
+    autoRefreshToken: true,
+    detectSessionInUrl: false,
+  },
+  realtime: { params: { eventsPerSecond: 10 } }
+});
+
+// Dashboard'dan marketplace/login sayfasına dönerken kullanılan tek adres
+// hesaplama noktası (önceden 3 farklı yerde tekrarlanıyordu — tek fonksiyona
+// indirildi, ileride adres değişirse tek satır güncellenir).
+function marketplaceUrl() {
+  return window.location.hostname.includes('dampingvar.com.tr')
+    ? 'https://www.dampingvar.com.tr/dist/index.html'
+    : `${window.location.origin}/dist/index.html`;
+}
+
+let currentUser = null;
+let currentProfile = null;
+let currentPage = 'overview';
+let allProducts = [];
+let allOrders = [];
+let allAuctions = [];
+let allInvoices = [];
+let logisticsCompanies = [];
+
+// ─── Helpers ────────────────────────────────────────────────────────
+const fmt = n => new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n || 0) + '₺';
+const fmtDate = d => d ? new Date(d).toLocaleDateString('tr-TR') : '—';
+const fmtDT = d => d ? new Date(d).toLocaleString('tr-TR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '—';
+const q = id => document.getElementById(id);
+const qs = s => document.querySelector(s);
+
+function toast(msg, type = 'success') {
+  const t = q('toast'), ti = q('toastInner');
+  const colors = { success: { bg: 'rgba(16,185,129,.15)', border: 'rgba(16,185,129,.4)', color: '#10B981', icon: 'fa-check-circle' },
+                   error:   { bg: 'rgba(239,68,68,.15)',  border: 'rgba(239,68,68,.4)',  color: '#EF4444', icon: 'fa-exclamation-circle' },
+                   info:    { bg: 'rgba(56,189,248,.15)', border: 'rgba(56,189,248,.4)', color: '#38BDF8', icon: 'fa-info-circle' } };
+  const c = colors[type] || colors.info;
+  ti.style.cssText = `padding:12px 16px;border-radius:12px;font-size:12px;font-family:'Courier New',monospace;font-weight:700;display:flex;align-items:center;gap:8px;box-shadow:0 8px 24px rgba(0,0,0,.5);background:${c.bg};border:1px solid ${c.border};color:${c.color}`;
+  ti.innerHTML = `<i class="fas ${c.icon}"></i>${msg}`;
+  t.style.display = 'block';
+  setTimeout(() => { t.style.display = 'none'; }, 3500);
+}
+
+function statusTag(status) {
+  const map = {
+    'active': '<span class="tag tag-green">● Aktif</span>',
+    'passive': '<span class="tag tag-gray">Pasif</span>',
+    'out_of_stock': '<span class="tag tag-red">Stok Bitti</span>',
+    'PENDING_PAYMENT': '<span class="tag tag-amber">Ödeme Bekliyor</span>',
+    'PROCESSING': '<span class="tag tag-blue">Hazırlanıyor</span>',
+    'SHIPPED': '<span class="tag tag-blue">Kargoda</span>',
+    'DELIVERED': '<span class="tag tag-green">Teslim Edildi</span>',
+    'CANCELLED': '<span class="tag tag-red">İptal</span>',
+    'pending': '<span class="tag tag-amber">Bekliyor</span>',
+    'released': '<span class="tag tag-green">Serbest</span>',
+    'disputed': '<span class="tag tag-red">İtirazlı</span>',
+    'refunded': '<span class="tag tag-gray">İade</span>',
+    'CONFIRMED': '<span class="tag tag-green">Onaylı</span>',
+    'ended': '<span class="tag tag-gray">Bitti</span>',
+    'upcoming': '<span class="tag tag-blue">Yaklaşan</span>',
+    'approved': '<span class="tag tag-green">Onaylandı</span>',
+    // store_orders (order_status_enum) — orders'takinden farklı sözlük:
+    'PAYMENT_PENDING': '<span class="tag tag-amber">Ödeme Bekliyor</span>',
+    'PREPARING': '<span class="tag tag-blue">Hazırlanıyor</span>',
+    'READY': '<span class="tag tag-blue">Hazır</span>',
+    'COMPLETED': '<span class="tag tag-green">Tamamlandı</span>',
+  };
+  return map[status] || `<span class="tag tag-gray">${status||'—'}</span>`;
+}
+
+// ─── Role-Based Menu ────────────────────────────────────────────────
+const MENUS = {
+  common: [
+    { id: 'overview',       icon: 'fa-chart-pie',       label: 'Genel Bakış' },
+    { id: 'trade-signals',  icon: 'fa-chart-line',      label: 'Trade Signals' },
+    { id: 'profile',        icon: 'fa-user-circle',     label: 'Profilim' },
+  ],
+  // CUSTOMER — eski adı "buyer". Normal B2C alıcı; ürün/ihale/sipariş
+  // akışına erişir.
+  customer: [
+    { id: 'products',       icon: 'fa-boxes',            label: 'Ürün Ekle / Listele' },
+    { id: 'auctions',       icon: 'fa-gavel',            label: 'Canlı İhale Aç' },
+    { id: 'won-auctions',   icon: 'fa-trophy',           label: 'Kazandığım İhaleler' },
+    { id: 'orders',         icon: 'fa-shopping-cart',    label: 'Siparişlerim' },
+    { id: 'invoices',       icon: 'fa-file-invoice',     label: 'Fatura Listesi' },
+  ],
+  // DEALER — eski adı "seller". B2B bayi: hem alabilir hem satabilir,
+  // Dealer Core System (canlı satış, ürün seçimi, performans) burada.
+  dealer: [
+    { id: 'products',       icon: 'fa-boxes',            label: 'Ürün Ekle / Listele' },
+    { id: 'live-sales',     icon: 'fa-video',            label: 'Canlı Satış' },
+    { id: 'dealer-catalog', icon: 'fa-list-check',       label: 'Ürün Seçimi' },
+    { id: 'dealer-performance', icon: 'fa-chart-line',   label: 'Performans' },
+    { id: 'auctions',       icon: 'fa-gavel',            label: 'Canlı İhale Aç' },
+    { id: 'auction-history',icon: 'fa-history',          label: 'İhale Geçmişi' },
+    { id: 'orders',         icon: 'fa-shopping-cart',    label: 'Sipariş Listesi' },
+    { id: 'invoices',       icon: 'fa-file-invoice',     label: 'Fatura Listesi' },
+    { id: 'logistics',      icon: 'fa-truck',            label: 'Lojistik & Kargo' },
+  ],
+  supplier: [
+    { id: 'supplier',       icon: 'fa-industry',         label: 'Tedarikçi Paneli' },
+  ],
+  admin: [
+    { id: 'catalog-admin',  icon: 'fa-truck-ramp-box',   label: 'Tedarik & Komisyon' },
+    { id: 'products',       icon: 'fa-boxes',            label: 'Ürünler' },
+    { id: 'auctions',       icon: 'fa-gavel',            label: 'İhaleler' },
+    { id: 'auction-history',icon: 'fa-history',          label: 'İhale Geçmişi' },
+    { id: 'orders',         icon: 'fa-shopping-cart',    label: 'Siparişler' },
+    { id: 'invoices',       icon: 'fa-file-invoice',     label: 'Faturalar' },
+    { id: 'logistics',      icon: 'fa-truck',            label: 'Lojistik' },
+    { id: 'accounting',     icon: 'fa-calculator',       label: 'Muhasebe' },
+    { id: 'finance',        icon: 'fa-landmark',         label: 'Finans' },
+    { id: 'trade-subs',     icon: 'fa-coins',            label: 'Abonelik Ödemeleri', sub: true, badgeKey: 'tradeSubsPending' },
+  ],
+  logistics: [
+    { id: 'orders',         icon: 'fa-shopping-cart',    label: 'Siparişler' },
+    { id: 'logistics',      icon: 'fa-truck',            label: 'Lojistik & Kargo' },
+  ],
+  finance: [
+    { id: 'orders',         icon: 'fa-shopping-cart',    label: 'Siparişler' },
+    { id: 'invoices',       icon: 'fa-file-invoice',     label: 'Faturalar' },
+    { id: 'accounting',     icon: 'fa-calculator',       label: 'Muhasebe' },
+    { id: 'finance',        icon: 'fa-landmark',         label: 'Finans & Escrow' },
+  ],
+  influencer: [
+    { id: 'orders',         icon: 'fa-shopping-cart',    label: 'Siparişler' },
+  ],
+  // FRANCHISE — süpervizör rolü: bayileri (dealer, eski adı seller),
+  // performans metriklerini ve satış analitiğini SADECE GÖRÜNTÜLER.
+  // Doğrudan satış yapamaz — bu yüzden products/auctions/orders gibi satış
+  // işlemi sayfaları menüsünde YOK.
+  franchise: [
+    { id: 'franchise',      icon: 'fa-sitemap',          label: 'Franchise Paneli' },
+  ],
+};
+
+// Geçerli, bilinen roller — MENUS'ün kendisinden türetiliyor ki yeni bir rol
+// MENUS'e menü tanımlanmadan asla "bilinir" sayılmasın.
+const KNOWN_ROLES = Object.keys(MENUS).filter(k => k !== 'common');
+
+// ─── ROLE GUARD ─────────────────────────────────────────────────────
+// Hangi sayfayı hangi rol(ler) görebilir — MENUS objesinin KENDİSİNDEN
+// otomatik türetiliyor (tek doğruluk kaynağı: bir sayfa MENUS'te bir role
+// eklenirse otomatik olarak o role erişim izni de kazanır, ayrı bir yerde
+// tekrar tanımlamaya gerek yok, senkronsuzluk riski sıfır).
+// common sayfalar (overview/trade-signals/profile) login olan HERKESE açık.
+const COMMON_PAGE_IDS = new Set(MENUS.common.map(i => i.id));
+function buildPageRoleMap() {
+  const map = {};
+  for (const [role, items] of Object.entries(MENUS)) {
+    if (role === 'common') continue;
+    for (const item of items) {
+      (map[item.id] || (map[item.id] = new Set())).add(role);
+    }
+  }
+  return map;
+}
+const PAGE_ROLES = buildPageRoleMap();
+
+/**
+ * requireRole(pageId) — bir sayfaya/modüle geçmeden ÖNCE çağrılır.
+ * true  → erişim serbest
+ * false → erişim YOK (navigateTo bu durumda sayfayı hiç açmaz, 403 gösterir)
+ */
+function requireRole(pageId) {
+  if (!currentProfile || !currentProfile.role) return false;
+  if (COMMON_PAGE_IDS.has(pageId)) return true;
+  const allowed = PAGE_ROLES[pageId];
+  return !!allowed && allowed.has(currentProfile.role);
+}
+
+/** 403 ekranı — sayfa engellenirse sessizce hiçbir şey olmaması yerine bunu göster. */
+function showUnauthorized(pageId) {
+  const container = q(`page-${pageId}`) || q('pages');
+  if (container) {
+    container.innerHTML = `
+      <div class="card" style="max-width:420px;margin:60px auto;text-align:center">
+        <i class="fas fa-lock" style="font-size:28px;color:var(--red);margin-bottom:12px;display:block"></i>
+        <div style="font-weight:800;margin-bottom:6px">Erişim Yetkiniz Yok</div>
+        <div style="font-size:12px;color:var(--muted)">"${currentProfile?.role || 'bilinmeyen'}" rolü bu sayfayı görüntüleyemez.</div>
+      </div>`;
+  }
+  console.warn(`[RoleGuard] "${currentProfile?.role}" rolü "${pageId}" sayfasına erişmeye çalıştı — engellendi.`);
+}
+
+function buildMenu(role) {
+  // ESKİ DAVRANIŞ (KALDIRILDI): `MENUS[role] || MENUS.buyer` — tanımsız/yanlış
+  // yazılmış bir rol sessizce "buyer" menüsü görüyordu. Bu YANLIŞ ve GÜVENSİZ:
+  // kullanıcı kendi rolüne ait olmayan bir menü görebilirdi. Artık tanımsız
+  // rol için menü KURULMUYOR, hata gösteriliyor.
+  if (!MENUS[role]) {
+    console.error(`[buildMenu] Tanımsız/desteklenmeyen rol için menü kurulamadı: "${role}"`);
+    showAuthGuardError(new Error(`Hesabınızın rolü ("${role || 'tanımsız'}") sistem tarafından tanınmıyor. Lütfen yöneticinizle iletişime geçin.`));
+    return;
+  }
+  const items = [...MENUS.common, ...MENUS[role]];
+  const seen = new Set();
+  const nav = q('sidebarNav');
+  nav.innerHTML = '';
+  // Rol etiketi
+  nav.innerHTML += `<div class="nav-section">${role?.toUpperCase() || 'KULLANICI'}</div>`;
+  items.forEach(item => {
+    if (seen.has(item.id)) return;
+    seen.add(item.id);
+    const subClass = item.sub ? ' nav-item-sub' : '';
+    const badge = item.badgeKey ? `<span class="badge" id="badge-${item.id}" style="display:none"></span>` : '';
+    nav.innerHTML += `<button class="nav-item${subClass}" id="nav-${item.id}" onclick="navigateTo('${item.id}')">
+      <i class="fas ${item.icon}"></i><span>${item.label}</span>${badge}
+    </button>`;
+  });
+  // Admin ise: bekleyen abonelik ödemesi sayısını çekip rozet olarak göster
+  if (role === 'admin') refreshTradeSubsBadge();
+}
+
+// ─── Trade Subs badge (bekleyen ödeme sayacı) ──────────────────────
+async function refreshTradeSubsBadge() {
+  try {
+    const { count } = await sb.from('trade_payments')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'pending');
+    const el = q('badge-trade-subs');
+    if (!el) return;
+    if (count && count > 0) {
+      el.textContent = count;
+      el.style.display = 'inline-block';
+    } else {
+      el.style.display = 'none';
+    }
+  } catch (e) { /* tablo henüz yoksa sessiz geç */ }
+}
+
+// ─── Navigation ─────────────────────────────────────────────────────
+window.navigateTo = function(pageId) {
+  // STRICT ROLE GUARD — sidebar sadece izinli sayfaları GÖSTERİR, ama bu
+  // navigateTo('finance') gibi bir çağrının konsoldan elle yapılmasını
+  // engellemez. Bu yüzden asıl kontrol noktası burası: sidebar'da hiç
+  // görünmese bile, rolü uymayan hiçbir sayfa render EDİLMEZ.
+  if (!requireRole(pageId)) {
+    showUnauthorized(pageId);
+    return;
+  }
+
+  // Stop trade signals loop when leaving the page
+  if (pageId !== 'trade-signals' && tsInterval) {
+    clearInterval(tsInterval);
+    tsInterval = null;
+    console.log('[TradeSignals] Loop stopped (left page)');
+  }
+
+  // MODÜL SİSTEMİ: mevcut sayfa kayıtlı bir modülse (live-sales, supplier...)
+  // ve oradan ayrılıyorsak, temiz kapat (interval sızıntısı olmasın)
+  if (currentPage !== pageId && isRegisteredPage(currentPage)) {
+    deactivateModule(currentPage);
+  }
+
+  // Deactivate all
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.page').forEach(el => el.classList.remove('active'));
+
+  const navItem = q(`nav-${pageId}`);
+  if (navItem) navItem.classList.add('active');
+
+  const page = q(`page-${pageId}`);
+  if (page) page.classList.add('active');
+
+  currentPage = pageId;
+
+  // Title
+  const titles = {
+    overview: 'Genel Bakış', 'trade-signals': 'Trade Signals', products: 'Ürünlerim', auctions: 'İhaleler',
+    'auction-history': 'İhale Geçmişi', 'won-auctions': 'Kazandığım İhaleler',
+    orders: 'Siparişler', invoices: 'Faturalar', logistics: 'Lojistik & Kargo',
+    accounting: 'Muhasebe', finance: 'Finans & Escrow', profile: 'Profilim',
+    'trade-subs': 'Abonelik Ödemeleri', 'live-sales': 'Canlı Satış', 'dealer-catalog': 'Ürün Seçimi', 'dealer-performance': 'Performans', supplier: 'Tedarikçi Paneli', franchise: 'Franchise Paneli', 'catalog-admin': 'Tedarik & Komisyon',
+  };
+  q('topbarTitle').textContent = titles[pageId] || pageId;
+
+  // Load data
+  loadPage(pageId);
+};
+
+window.toggleSidebar = function() {
+  q('sidebar').classList.toggle('collapsed');
+};
+
+// ─── Page Loader ────────────────────────────────────────────────────
+async function loadPage(pageId) {
+  // MODÜL SİSTEMİ: kayıtlı bir modülse registry üzerinden mount et,
+  // eski switch-case'e hiç düşme (live-sales, supplier, ileride eklenecekler)
+  if (isRegisteredPage(pageId)) {
+    const container = q(`page-${pageId}`);
+    activateModule(pageId, container, { sb, user: currentUser, profile: currentProfile, q });
+    return;
+  }
+  switch(pageId) {
+    case 'overview':      await loadOverview(); break;
+    case 'trade-signals': loadTradeSignals(); break;
+    case 'products':      await loadProducts(); break;
+    case 'auctions':      await loadAuctions(); break;
+    case 'auction-history': await loadAuctionHistory(); break;
+    case 'won-auctions':  await loadWonAuctions(); break;
+    case 'orders':        await loadOrders(); break;
+    case 'invoices':      await loadInvoices(); break;
+    case 'logistics':     await loadLogistics(); break;
+    case 'accounting':    await loadAccounting(); break;
+    case 'finance':       await loadFinance(); break;
+    case 'trade-subs':    await loadTradeSubs(); break;
+    case 'profile':       renderProfile(); break;
+  }
+}
+
+// ─── AUTH ────────────────────────────────────────────────────────────
+async function init() {
+  try {
+    // ── Adım 1: Mevcut session'ı doğrudan oku ───────────────────────────────
+    // getSession() localStorage'dan okur, ağa gitMEZ — hızlı ve güvenilir
+    const { data: { session: existingSession } } = await sb.auth.getSession();
+
+    if (existingSession) {
+      // Session var → uygulamayı başlat
+      await bootApp(existingSession);
+    } else {
+      // Session yok → login sayfasına yönlendir
+      window.location.href = marketplaceUrl();
+      return;
+    }
+  } catch (e) {
+    console.error('[init] Başlatma hatası:', e);
+    showAuthGuardError(e);
+    return;
+  }
+
+  // ── Adım 2: Oturum değişikliklerini dinle (çıkış, token refresh) ──────────
+  sb.auth.onAuthStateChange((event, session) => {
+    if (event === 'SIGNED_OUT') {
+      window.location.href = marketplaceUrl();
+    }
+    // TOKEN_REFRESHED: session güncellendi, bootApp zaten çalışıyor — bir şey yapma
+    // SIGNED_IN dashboard'da gerçekleşmez — index.html'den yönlendirme ile gelinir
+  });
+}
+
+// Spinner'ı sonsuza kadar döndürmek yerine görünür, aksiyon alınabilir bir
+// hata ekranı göster (retry butonu). Daha önce herhangi bir adım (profil
+// sorgusu, network hatası, RLS...) throw ederse kullanıcı hiçbir geri bildirim
+// almadan "Kimlik doğrulanıyor..." ekranında sonsuza kadar kalıyordu.
+function showAuthGuardError(err) {
+  const el = q('authGuard');
+  if (!el) return;
+  el.innerHTML = `
+    <div style="text-align:center;max-width:360px">
+      <i class="fas fa-triangle-exclamation" style="font-size:32px;color:var(--red);margin-bottom:16px;display:block"></i>
+      <p style="color:var(--text);font-size:13px;font-weight:700;margin-bottom:6px">Dashboard yüklenemedi</p>
+      <p class="font-mono" style="color:var(--muted);font-size:11px;margin-bottom:16px;word-break:break-word">${(err && err.message) || 'Bilinmeyen hata'}</p>
+      <button class="btn btn-gold" onclick="window.location.reload()"><i class="fas fa-rotate-right"></i> Tekrar Dene</button>
+    </div>`;
+}
+
+async function bootApp(session) {
+  try {
+    currentUser = session.user;
+    const { data: profile, error: profileError } = await sb.from('profiles').select('*').eq('id', currentUser.id).single();
+    if (profileError) console.error('[bootApp] Profil sorgusu hatası:', profileError);
+    currentProfile = profile;
+
+    const role = profile?.role;
+
+    // NOT (ROLE REVİZYONU): Eskiden burada `role === 'customer'` için
+    // dashboard'a hiç girmeden marketplace'e yönlendiren bir blok vardı.
+    // O davranış KALDIRILDI — 'customer' artık eski 'buyer'ın yeni adı
+    // (normal B2C alıcı, dashboard'a girer). "No-dashboard" davranışının
+    // gerçek bir kullanıcısı yoktu (profiles.csv'de hiç görülmedi), bu
+    // yüzden güvenle kaldırıldı.
+
+    // ── STRICT ROLE VALIDATION: tanımsız/bilinmeyen rol → ERİŞİM ENGELLE ────
+    // ESKİ DAVRANIŞ (KALDIRILDI): `profile?.role || 'buyer'` — role hiç
+    // yoksa ya da yazım hatasıysa sessizce eski "buyer" menüsü açılıyordu.
+    // Artık böyle bir durumda dashboard'a HİÇ girilmiyor, net bir hata
+    // gösteriliyor.
+    if (!role || !KNOWN_ROLES.includes(role)) {
+      showAuthGuardError(new Error(`Hesabınızın rolü ("${role || 'atanmamış'}") tanınmıyor. Dashboard'a erişiminiz engellendi — lütfen yöneticinizle iletişime geçin.`));
+      return;
+    }
+
+    // ── STRICT ROLE VALIDATION: DEALER CORE SYSTEM §7 — SUSPENDED ───────────
+    // "SUSPENDED: login disabled, dealership revoked." Bayi (dealer, eski adı
+    // "seller") rolü için mağazası askıya alınmışsa dashboard'a hiç girilmez,
+    // oturum kapatılır ve net bir mesaj gösterilir.
+    if (role === 'dealer') {
+      const { data: myStore } = await sb.from('stores').select('dealer_status,login_disabled').eq('owner_id', currentUser.id).maybeSingle();
+      if (myStore?.login_disabled || myStore?.dealer_status === 'SUSPENDED') {
+        await sb.auth.signOut();
+        showAuthGuardError(new Error('Bayiliğiniz performans kurallarına göre ASKIYA ALINDI. Giriş devre dışı bırakıldı. Destek ekibiyle iletişime geçin.'));
+        return;
+      }
+    }
+
+    const name = profile?.full_name || profile?.company_name || currentUser.email?.split('@')[0] || 'Kullanıcı';
+    // ROL ETİKETLERİ (revize): customer=Müşteri (eski buyer), dealer=Bayi (eski
+    // seller), supplier=Tedarikçi, admin=Yönetici, logistics=Lojistik,
+    // influencer=Influencer. finance/franchise şimdilik korunuyor (aktif
+    // kullanıcısı yok ama kaldırılması ayrıca istenmedi).
+    const roleLabel = { customer:'Müşteri', dealer:'Bayi', admin:'Yönetici', logistics:'Lojistik', finance:'Finans', influencer:'Influencer', supplier:'Tedarikçi', franchise:'Franchise' }[role] || role;
+
+    q('topbarName').textContent = name;
+    q('userRoleLabel').textContent = roleLabel;
+
+    buildMenu(role);
+
+    // Load logistics companies for waybill modal
+    const { data: lc } = await sb.from('logistics_companies').select('id,name').eq('is_active', true);
+    logisticsCompanies = lc || [];
+
+    // Show app
+    q('authGuard').style.display = 'none';
+    q('pages').style.display = 'block';
+    navigateTo('overview');
+
+    // Active user heartbeat
+    updateHeartbeat();
+    setInterval(updateHeartbeat, 5 * 60 * 1000);
+  } catch (e) {
+    console.error('[bootApp] Kritik hata:', e);
+    showAuthGuardError(e);
+  }
+}
+
+async function updateHeartbeat() {
+  if (!currentUser) return;
+  await sb.from('active_users').upsert({ user_id: currentUser.id, last_active: new Date().toISOString(), is_active: true });
+}
+
+window.handleLogout = async function() {
+  await sb.auth.signOut();
+  window.location.href = marketplaceUrl();
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// TRADE SIGNALS ENGINE
+// BinanceService → phaseEngine → signalEngine → performanceEngine → UI
+// ═══════════════════════════════════════════════════════════════════
+
+const TS_SYMBOLS  = ['BTCUSDT','ETHUSDT','BNBUSDT','SOLUSDT','XRPUSDT'];
+const TS_POLL_MS  = 4000;
+let   tsInterval  = null;
+let   tsState     = {};   // symbol → { priceHistory, entry_price, price, phase, signal, confidence, profitPct }
+let   tsPerf      = { total:0, wins:0, losses:0, winSignals:new Set() };
+let   tsAccess    = 'FREE';
+
+// ── 1. ACCESS CHECK ───────────────────────────────────────────────
+async function checkTradeSignalsAccess() {
+  if (!currentUser) return 'FREE';
+  try {
+    const { data } = await sb
+      .from('trade_subscriptions')
+      .select('plan,status,expires_at')
+      .eq('user_id', currentUser.id)
+      .eq('status','active')
+      .maybeSingle();
+    if (!data) return 'FREE';
+    if (data.expires_at && new Date(data.expires_at) < new Date()) return 'FREE';
+    console.log('[TradeSignals] Access level:', data.plan);
+    return data.plan || 'FREE';
+  } catch(e) { return 'FREE'; }
+}
+
+// ── 2. BinanceService ─────────────────────────────────────────────
+async function binanceFetchAll() {
+  const results = await Promise.allSettled(
+    TS_SYMBOLS.map(sym =>
+      fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${sym}`)
+        .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+    )
+  );
+  const data = {};
+  results.forEach((r,i) => {
+    if (r.status === 'fulfilled') data[TS_SYMBOLS[i]] = r.value;
+  });
+  if (Object.keys(data).length) console.log('[BinanceService] Binance connected —', Object.keys(data).length, 'symbol');
+  return data;
+}
+
+// ── 3. phaseEngine ────────────────────────────────────────────────
+function phaseEngineCalc(symbol, ticker) {
+  if (!tsState[symbol]) tsState[symbol] = { priceHistory:[], entry_price:null };
+  const st = tsState[symbol];
+
+  const price     = parseFloat(ticker.lastPrice)          || 0;
+  const changePct = parseFloat(ticker.priceChangePercent) || 0;
+
+  st.priceHistory.push(price);
+  if (st.priceHistory.length > 20) st.priceHistory.shift();
+  if (st.entry_price === null) st.entry_price = price;
+
+  st.price     = price;
+  st.changePct = changePct;
+
+  const h   = st.priceHistory;
+  const avg = h.reduce((a,b)=>a+b,0) / h.length;
+  const vol = h.length > 1
+    ? Math.sqrt(h.reduce((s,p)=>s+(p-avg)**2,0)/h.length) / (avg||1) * 100
+    : 0;
+  st.volatility = vol;
+
+  if      (h.length < 5)                                     st.phase = 'Phase1';
+  else if (Math.abs(changePct) < 0.5 && vol < 0.4)          st.phase = 'Phase1'; // accumulation
+  else if (Math.abs(changePct) >= 0.5 && Math.abs(changePct) < 2.5) st.phase = 'Phase2'; // trend
+  else                                                       st.phase = 'Phase3'; // breakout
+
+  console.log(`[phaseEngine] ${symbol} → ${st.phase} | Δ${changePct.toFixed(2)}% vol=${vol.toFixed(2)}%`);
+  return st;
+}
+
+// ── 4. signalEngine ───────────────────────────────────────────────
+function signalEngineCalc(symbol, st) {
+  let signal = 'HOLD', conf = 50;
+
+  if (st.phase === 'Phase2') {
+    if (st.changePct > 0) { signal='BUY';  conf=Math.min(95,60+Math.abs(st.changePct)*8); }
+    else                  { signal='SELL'; conf=Math.min(95,60+Math.abs(st.changePct)*8); }
+  } else if (st.phase === 'Phase3') {
+    if (st.changePct > 0) { signal='BUY';  conf=Math.min(99,75+Math.abs(st.changePct)*5); }
+    else                  { signal='SELL'; conf=Math.min(99,75+Math.abs(st.changePct)*5); }
+  } else {
+    signal='HOLD';
+    conf=Math.max(10, 50 - st.volatility*5);
+  }
+
+  st.signal     = signal;
+  st.confidence = Math.round(Math.max(0,Math.min(100,conf)));
+  console.log(`[signalEngine] ${symbol} → ${signal} (${st.confidence}% confidence)`);
+  return st;
+}
+
+// ── 5. performanceEngine ──────────────────────────────────────────
+function performanceEngineUpdate(symbol, st) {
+  const pnl = st.entry_price ? ((st.price - st.entry_price) / st.entry_price) * 100 : 0;
+  st.profitPct = pnl;
+
+  const key = `${symbol}-${st.signal}-${Math.round(st.entry_price)}`;
+  if (!tsPerf.winSignals.has(key) && st.signal !== 'HOLD') {
+    if ((st.signal==='BUY' && pnl>0.3)||(st.signal==='SELL' && pnl<-0.3)) {
+      tsPerf.wins++;
+      tsPerf.total++;
+      tsPerf.winSignals.add(key);
+    } else if (Math.abs(pnl) > 0.3) {
+      tsPerf.losses++;
+      tsPerf.total++;
+      tsPerf.winSignals.add(key);
+    }
+  }
+  console.log(`[performanceEngine] ${symbol} pnl=${pnl.toFixed(2)}% | winRate=${tsPerf.total?((tsPerf.wins/tsPerf.total)*100).toFixed(1):0}%`);
+  return st;
+}
+
+// ── 6. RENDER ─────────────────────────────────────────────────────
+function renderTradeSignals() {
+  const tbody = q('tsTable');
+  if (!tbody) return;
+
+  const rows = TS_SYMBOLS.map(sym => {
+    const st = tsState[sym];
+    if (!st || st.price == null) return '';
+    const label  = sym.replace('USDT','');
+    const sColor = st.signal==='BUY'?'tag-green':st.signal==='SELL'?'tag-red':'tag-amber';
+    const pColor = (st.profitPct||0)>=0?'var(--green)':'var(--red)';
+    const fmtPrc = v => v>=1000
+      ? `$${v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}`
+      : `$${(v||0).toFixed(4)}`;
+    return `<tr>
+      <td style="font-weight:900">${label}</td>
+      <td><span class="tag tag-blue">${st.phase||'—'}</span></td>
+      <td><span class="tag ${sColor}">${st.signal||'—'}</span></td>
+      <td style="font-family:'Courier New',monospace;font-weight:700">${st.confidence||0}%</td>
+      <td style="font-family:'Courier New',monospace">${fmtPrc(st.entry_price)}</td>
+      <td style="font-family:'Courier New',monospace">${fmtPrc(st.price)}</td>
+      <td style="font-family:'Courier New',monospace;color:${pColor};font-weight:700">${(st.profitPct||0)>=0?'+':''}${(st.profitPct||0).toFixed(2)}%</td>
+      <td style="font-size:10px;color:var(--muted)">${new Date().toLocaleTimeString('tr-TR')}</td>
+    </tr>`;
+  }).join('');
+
+  tbody.innerHTML = rows || '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--muted)">Veri bekleniyor…</td></tr>';
+
+  const winRate = tsPerf.total ? ((tsPerf.wins/tsPerf.total)*100).toFixed(1) : '0.0';
+  const perfEl  = q('tsPerfStats');
+  if (perfEl) perfEl.innerHTML = [
+    { label:'Toplam Sinyal', value:tsPerf.total,           color:'#38BDF8', icon:'fa-signal' },
+    { label:'Başarılı',      value:tsPerf.wins,            color:'#10B981', icon:'fa-check-circle' },
+    { label:'Başarısız',     value:tsPerf.losses,          color:'#EF4444', icon:'fa-times-circle' },
+    { label:'Başarı Oranı',  value:`${winRate}%`,          color:'#D4AF37', icon:'fa-trophy' },
+  ].map(c=>`<div class="stat-card"><div class="stat-icon" style="background:${c.color}15;color:${c.color}"><i class="fas ${c.icon}"></i></div>
+    <div><div class="stat-label">${c.label.toUpperCase()}</div><div class="stat-value">${c.value}</div></div></div>`).join('');
+
+  const timeEl = q('tsUpdateTime');
+  if (timeEl) timeEl.textContent = 'Son: ' + new Date().toLocaleTimeString('tr-TR');
+}
+
+// ── 7. CYCLE ──────────────────────────────────────────────────────
+async function tsRunCycle() {
+  try {
+    const tickers = await binanceFetchAll();
+    for (const sym of TS_SYMBOLS) {
+      if (!tickers[sym]) continue;
+      let st = phaseEngineCalc(sym, tickers[sym]);
+          st = signalEngineCalc(sym, st);
+          st = performanceEngineUpdate(sym, st);
+      tsState[sym] = st;
+    }
+    renderTradeSignals();
+    const liveEl = q('tsLiveTag');
+    if (liveEl) { liveEl.className='tag tag-green'; liveEl.innerHTML='<i class="fas fa-circle" style="font-size:7px"></i>&nbsp;LIVE'; }
+  } catch(e) {
+    console.error('[TradeSignals] cycle error:', e);
+    const liveEl = q('tsLiveTag');
+    if (liveEl) { liveEl.className='tag tag-red'; liveEl.textContent='ERROR'; }
+  }
+}
+
+// ── 8. ENTRY POINT ────────────────────────────────────────────────
+async function loadTradeSignals() {
+  const lo = q('tsLoading'), lk = q('tsLockedPanel'), co = q('tsContent');
+  if (!lo || !lk || !co) return;
+  lo.style.display='block'; lk.style.display='none'; co.style.display='none';
+
+  tsAccess = await checkTradeSignalsAccess();
+
+  const pb = q('tsPlanBadge');
+  if (pb) {
+    pb.textContent = tsAccess;
+    pb.className   = tsAccess==='VIP'?'tag tag-gold':tsAccess==='PRO'?'tag tag-blue':'tag tag-gray';
+  }
+
+  if (tsAccess==='FREE') {
+    lo.style.display='none'; lk.style.display='block';
+    if (tsInterval) { clearInterval(tsInterval); tsInterval=null; }
+    return;
+  }
+
+  lo.style.display='none'; co.style.display='block';
+
+  if (tsInterval) clearInterval(tsInterval);
+  await tsRunCycle();
+  tsInterval = setInterval(tsRunCycle, TS_POLL_MS);
+  console.log('[TradeSignals] Real-time loop started —', TS_POLL_MS, 'ms');
+}
+
+// ─── OVERVIEW ──────────────────────────────────────────────────────
+
+async function loadOverview() {
+  const { data: stats } = await sb.from('platform_stats').select('*').eq('id', 1).single();
+  const role = currentProfile?.role;
+
+  // Stats cards
+  const cards = role === 'dealer' || role === 'admin' ? [
+    { label: 'Günlük Hacim', value: fmt(stats?.daily_volume), icon: 'fa-chart-line', color: '#10B981' },
+    { label: 'Aktif İhale', value: stats?.active_auctions || 0, icon: 'fa-gavel', color: '#D4AF37' },
+    { label: 'Bekleyen Escrow', value: fmt(stats?.pending_escrow), icon: 'fa-lock', color: '#F59E0B' },
+    { label: 'Komisyon Geliri', value: fmt(stats?.commission_income), icon: 'fa-coins', color: '#38BDF8' },
+  ] : [
+    { label: 'Günlük Hacim', value: fmt(stats?.daily_volume), icon: 'fa-chart-line', color: '#10B981' },
+    { label: 'Aktif İhale', value: stats?.active_auctions || 0, icon: 'fa-gavel', color: '#D4AF37' },
+    { label: 'Online Alıcı', value: stats?.active_buyers || 0, icon: 'fa-users', color: '#38BDF8' },
+    { label: 'Online Satıcı', value: stats?.active_sellers || 0, icon: 'fa-store', color: '#A78BFA' },
+  ];
+
+  q('statsGrid').innerHTML = cards.map(c => `
+    <div class="stat-card">
+      <div class="stat-icon" style="background:${c.color}15;color:${c.color}"><i class="fas ${c.icon}"></i></div>
+      <div><div class="stat-label">${c.label.toUpperCase()}</div><div class="stat-value">${c.value}</div></div>
+    </div>`).join('');
+
+  // Mini auction list
+  const { data: aucs } = await sb.from('auctions')
+    .select('*, products(title)')
+    .eq('status', 'active').limit(3);
+  q('overviewAuctions').innerHTML = (aucs && aucs.length > 0)
+    ? aucs.map(a => `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
+        <div><div style="font-size:12px;font-weight:700">${a.products?.title || 'İhale'}</div>
+        <div style="font-size:10px;color:var(--muted);font-family:'Courier New',monospace">${fmtDT(a.end_time)}</div></div>
+        <div style="text-align:right"><div style="font-size:13px;font-weight:900;color:var(--green);font-family:'Courier New',monospace">${fmt(a.current_bid || a.start_price)}</div>
+        <div style="font-size:10px;color:var(--muted)">${a.bid_count || 0} teklif</div></div>
+      </div>`).join('')
+    : '<p style="color:var(--muted);font-size:12px;text-align:center;padding:16px">Aktif ihale yok</p>';
+
+  // Mini orders
+  let ordQuery2 = sb.from('orders')
+    .select('order_number,total_amount,order_status,created_at')
+    .order('created_at', { ascending: false }).limit(3);
+  if (role === 'dealer') ordQuery2 = ordQuery2.eq('seller_id', currentUser.id);
+  else if (role === 'customer') ordQuery2 = ordQuery2.eq('buyer_id', currentUser.id);
+  const { data: ords } = await ordQuery2;
+  q('overviewOrders').innerHTML = (ords && ords.length > 0)
+    ? ords.map(o => `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
+        <div><div style="font-size:12px;font-weight:700;font-family:'Courier New',monospace">${o.order_number}</div></div>
+        <div style="display:flex;align-items:center;gap:8px">${statusTag(o.order_status)}<span style="font-weight:900;color:var(--gold);font-family:'Courier New',monospace">${fmt(o.total_amount)}</span></div>
+      </div>`).join('')
+    : '<p style="color:var(--muted);font-size:12px;text-align:center;padding:16px">Sipariş yok</p>';
+}
+
+// ─── PRODUCTS ──────────────────────────────────────────────────────
+async function loadProducts(filter = 'all') {
+  let query = sb.from('products').select('*').eq('seller_id', currentUser.id).order('created_at', { ascending: false });
+  if (filter !== 'all') {
+    if (filter === 'out_of_stock') query = query.eq('stock', 0);
+    else query = query.eq('status', filter);
+  }
+  const { data } = await query;
+  allProducts = data || [];
+  renderProductsTable(allProducts);
+}
+
+function renderProductsTable(products) {
+  const saleLabels = { normal: '<span class="tag tag-red">🔥 Damping</span>', trink: '<span class="tag tag-amber">⚡ Trink</span>', auction: '<span class="tag tag-gold">🏷️ İhale</span>' };
+  q('productsTable').innerHTML = products.length ? products.map(p => `
+    <tr>
+      <td style="max-width:160px"><div style="font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${p.title}</div>
+      ${p.image_url ? `<img src="${p.image_url}" style="width:36px;height:36px;border-radius:6px;object-fit:cover;margin-top:3px">` : ''}</td>
+      <td>${p.category || '—'}</td>
+      <td style="font-family:'Courier New',monospace;font-weight:700;color:var(--green)">${fmt(p.price)}</td>
+      <td><span style="color:${p.stock === 0 ? 'var(--red)' : p.stock < 5 ? 'var(--amber)' : 'var(--text)'};font-weight:700">${p.stock}</span></td>
+      <td>${saleLabels[p.sale_type] || p.sale_type}</td>
+      <td>${statusTag(p.stock === 0 ? 'out_of_stock' : p.status)}</td>
+      <td>
+        <button class="btn btn-ghost btn-sm" onclick="editProduct('${p.id}')"><i class="fas fa-edit"></i></button>
+        ${p.status === 'active'
+          ? `<button class="btn btn-sm" style="background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.3);color:var(--red)" onclick="toggleProduct('${p.id}','passive')"><i class="fas fa-ban"></i></button>`
+          : `<button class="btn btn-sm" style="background:rgba(16,185,129,.15);border:1px solid rgba(16,185,129,.3);color:var(--green)" onclick="toggleProduct('${p.id}','active')"><i class="fas fa-check"></i></button>`}
+      </td>
+    </tr>`).join('')
+    : '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--muted)">Ürün bulunamadı</td></tr>';
+}
+
+window.filterProducts = function(filter, el) {
+  document.querySelectorAll('#productFilterTabs .pill-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  loadProducts(filter);
+};
+
+window.openProductModal = function(product = null) {
+  ['productId','pTitle','pCategory','pPrice','pStock','pDesc','pImageUrl','pTrinkPrice','pAuctionStart','pAuctionEnd'].forEach(id => {
+    const el = q(id); if (el) el.value = '';
+  });
+  q('productModalTitle').textContent = product ? 'Ürünü Düzenle' : 'Yeni Ürün';
+  q('productModalAlert').innerHTML = '';
+  if (product) {
+    q('productId').value = product.id;
+    q('pTitle').value = product.title || '';
+    q('pCategory').value = product.category || '';
+    q('pPrice').value = product.price || '';
+    q('pStock').value = product.stock || '';
+    q('pDesc').value = product.description || '';
+    q('pImageUrl').value = product.image_url || '';
+    q('pSaleType').value = product.sale_type || 'normal';
+    q('pTaxRate').value = product.tax_rate || '20';
+    q('pSector').value = product.sector || 'diger';
+    if (product.trink_price) q('pTrinkPrice').value = product.trink_price;
+    if (product.auction_start_price) q('pAuctionStart').value = product.auction_start_price;
+    onSaleTypeChange();
+  }
+  q('productModal').classList.add('open');
+};
+
+window.editProduct = function(id) {
+  const p = allProducts.find(x => x.id === id);
+  if (p) openProductModal(p);
+};
+
+window.onSaleTypeChange = function() {
+  const t = q('pSaleType').value;
+  q('trinkFields').style.display = t === 'trink' ? 'block' : 'none';
+  q('auctionFields').style.display = t === 'auction' ? 'block' : 'none';
+};
+
+window.saveProduct = async function() {
+  const id = q('productId').value;
+  const payload = {
+    title: q('pTitle').value, category: q('pCategory').value,
+    price: parseFloat(q('pPrice').value) || 0, stock: parseInt(q('pStock').value) || 0,
+    sale_type: q('pSaleType').value, description: q('pDesc').value,
+    image_url: q('pImageUrl').value, tax_rate: parseInt(q('pTaxRate').value),
+    sector: q('pSector').value, status: 'active', seller_id: currentUser.id,
+    trink_price: q('pTrinkPrice').value ? parseFloat(q('pTrinkPrice').value) : null,
+    auction_start_price: q('pAuctionStart').value ? parseFloat(q('pAuctionStart').value) : null,
+    auction_end_time: q('pAuctionEnd').value || null,
+  };
+  let error;
+  if (id) {
+    ({ error } = await sb.from('products').update(payload).eq('id', id));
+  } else {
+    ({ error } = await sb.from('products').insert(payload));
+  }
+  if (error) {
+    q('productModalAlert').innerHTML = `<div class="alert alert-error"><i class="fas fa-exclamation-circle"></i>${error.message}</div>`;
+  } else {
+    toast(id ? 'Ürün güncellendi' : 'Ürün eklendi');
+    closeModal('productModal');
+    loadProducts();
+  }
+};
+
+window.toggleProduct = async function(id, newStatus) {
+  const { error } = await sb.from('products').update({ status: newStatus }).eq('id', id);
+  if (!error) { toast(`Ürün ${newStatus === 'active' ? 'aktif edildi' : 'pasife alındı'}`); loadProducts(); }
+};
+
+// ─── AUCTIONS ─────────────────────────────────────────────────────
+async function loadAuctions(filter = 'all') {
+  const role = currentProfile?.role;
+  let query = sb.from('auctions')
+    .select('*, products(title,image_url), profiles:seller_id(full_name,company_name)')
+    .order('created_at', { ascending: false }).limit(50);
+  if (role === 'dealer') query = query.eq('seller_id', currentUser.id);
+  if (filter !== 'all') query = query.eq('status', filter);
+  const { data } = await query;
+  allAuctions = data || [];
+  renderAuctionsTable(allAuctions);
+}
+
+function renderAuctionsTable(auctions) {
+  const typeLabel = { ascending: '<span class="tag tag-green">↑ Artan</span>', descending: '<span class="tag tag-blue">↓ Azalan</span>' };
+  q('auctionsTable').innerHTML = auctions.length ? auctions.map(a => `
+    <tr>
+      <td style="font-weight:700">${a.products?.title || '—'}</td>
+      <td style="font-family:'Courier New',monospace">${fmt(a.start_price)}</td>
+      <td style="font-family:'Courier New',monospace;color:var(--green);font-weight:900">${fmt(a.current_bid || a.start_price)}</td>
+      <td style="font-family:'Courier New',monospace;color:var(--blue)">${a.bid_count || 0}</td>
+      <td style="font-size:11px">${fmtDT(a.end_time)}</td>
+      <td>${typeLabel[a.auction_type] || '<span class="tag tag-gray">—</span>'}</td>
+      <td>${statusTag(a.status)}</td>
+      <td>
+        ${a.status === 'active' ? `<button class="btn btn-red btn-sm" onclick="endAuction('${a.id}')"><i class="fas fa-stop"></i></button>` : ''}
+        <button class="btn btn-ghost btn-sm" onclick="viewBids('${a.id}')"><i class="fas fa-list"></i>Teklifler</button>
+      </td>
+    </tr>`).join('')
+    : '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--muted)">İhale bulunamadı</td></tr>';
+}
+
+window.filterAuctions = function(filter, el) {
+  document.querySelectorAll('#page-auctions .pill-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  loadAuctions(filter);
+};
+
+window.openAuctionModal = async function() {
+  q('auctionModalAlert').innerHTML = '';
+  // Ürünleri yükle
+  const { data: prods } = await sb.from('products').select('id,title').eq('seller_id', currentUser.id).eq('status', 'active');
+  const sel = q('aProductId');
+  sel.innerHTML = '<option value="">— Ürün seçin —</option>';
+  (prods || []).forEach(p => sel.innerHTML += `<option value="${p.id}">${p.title}</option>`);
+  q('auctionModal').classList.add('open');
+};
+
+window.saveAuction = async function() {
+  const productId = q('aProductId').value;
+  if (!productId) { q('auctionModalAlert').innerHTML = `<div class="alert alert-error"><i class="fas fa-exclamation-circle"></i>Ürün seçiniz</div>`; return; }
+  const durationH = parseFloat(q('aDuration').value) || 12;
+  const endTime = new Date(Date.now() + durationH * 3600 * 1000).toISOString();
+  const { error } = await sb.from('auctions').insert({
+    product_id: productId, seller_id: currentUser.id,
+    start_price: parseFloat(q('aStartPrice').value) || 0,
+    current_bid: parseFloat(q('aStartPrice').value) || 0,
+    bid_increment: parseFloat(q('aBidIncrement').value) || 250,
+    end_time: endTime, duration_hours: durationH,
+    auction_type: q('aType').value, status: 'active',
+    quantity: q('aQuantity').value, quantity_unit: q('aQuantityUnit').value,
+  });
+  if (error) {
+    q('auctionModalAlert').innerHTML = `<div class="alert alert-error"><i class="fas fa-exclamation-circle"></i>${error.message}</div>`;
+  } else {
+    toast('İhale başlatıldı!');
+    closeModal('auctionModal');
+    loadAuctions();
+  }
+};
+
+window.endAuction = async function(id) {
+  if (!confirm('İhaleyi sonlandırmak istediğinizden emin misiniz?')) return;
+  const { error } = await sb.from('auctions').update({ status: 'ended' }).eq('id', id);
+  if (!error) { toast('İhale sonlandırıldı', 'info'); loadAuctions(); }
+};
+
+window.viewBids = async function(auctionId) {
+  const { data } = await sb.from('auction_bids')
+    .select('*, profiles:bidder_id(full_name,company_name)')
+    .eq('auction_id', auctionId).order('amount', { ascending: false }).limit(20);
+  if (!data || data.length === 0) { toast('Bu ihaleye teklif yok', 'info'); return; }
+  alert('Son Teklifler:\n' + data.slice(0,5).map(b => `${b.profiles?.full_name || 'Kullanıcı'}: ${fmt(b.amount)}`).join('\n'));
+};
+
+// ─── AUCTION HISTORY ──────────────────────────────────────────────
+async function loadAuctionHistory() {
+  const { data } = await sb.from('auctions')
+    .select('*, products(title), profiles:winner_id(full_name,company_name)')
+    .eq('seller_id', currentUser.id).eq('status', 'ended')
+    .order('updated_at', { ascending: false }).limit(50);
+  q('auctionHistoryTable').innerHTML = (data && data.length) ? data.map(a => `
+    <tr>
+      <td style="font-weight:700">${a.products?.title || '—'}</td>
+      <td style="font-family:'Courier New',monospace">${fmt(a.start_price)}</td>
+      <td style="font-family:'Courier New',monospace;color:var(--green);font-weight:900">${fmt(a.current_bid)}</td>
+      <td style="color:var(--blue);font-family:'Courier New',monospace">${a.bid_count || 0}</td>
+      <td style="font-weight:700">${a.profiles?.full_name || a.profiles?.company_name || '—'}</td>
+      <td style="font-size:11px">${fmtDate(a.updated_at)}</td>
+      <td>${statusTag(a.status)}</td>
+    </tr>`).join('')
+    : '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--muted)">Geçmiş ihale yok</td></tr>';
+}
+
+// ─── WON AUCTIONS ─────────────────────────────────────────────────
+async function loadWonAuctions() {
+  const { data } = await sb.from('auctions')
+    .select('*, products(title), profiles:seller_id(full_name,company_name), orders(id,order_number)')
+    .eq('winner_id', currentUser.id).eq('status', 'ended')
+    .order('updated_at', { ascending: false }).limit(50);
+  q('wonAuctionsTable').innerHTML = (data && data.length) ? data.map(a => `
+    <tr>
+      <td style="font-weight:700">${a.products?.title || '—'}</td>
+      <td style="font-family:'Courier New',monospace;color:var(--gold);font-weight:900">${fmt(a.current_bid)}</td>
+      <td>${a.profiles?.full_name || a.profiles?.company_name || '—'}</td>
+      <td style="font-size:11px">${fmtDate(a.updated_at)}</td>
+      <td>${a.orders?.order_number ? `<span class="tag tag-green">${a.orders.order_number}</span>` : '<span class="tag tag-amber">Bekliyor</span>'}</td>
+    </tr>`).join('')
+    : '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--muted)">Henüz ihale kazanılmadı</td></tr>';
+}
+
+// ─── ORDERS ───────────────────────────────────────────────────────
+async function loadOrders(filter = 'all') {
+  const role = currentProfile?.role;
+  let query = sb.from('orders')
+    .select('*, products!fk_orders_product(title), profiles_buyer:buyer_id(full_name,company_name), profiles_seller:seller_id(full_name,company_name), order_items(id,product_id,quantity,unit_price,total_price,tax_rate,tax_amount,total_with_tax,products!order_items_product_id_fkey(title)), invoices(id,invoice_number,status)')
+    .order('created_at', { ascending: false }).limit(50);
+
+  // Rol bazlı filtreleme: RLS'in seller_id veya buyer_id'ye göre kısıtladığı durumda
+  // or() ile her iki kolonu da kapsıyoruz — RLS hangi satıra izin veriyorsa o gelir
+  if (role === 'dealer') {
+    query = query.eq('seller_id', currentUser.id);
+    const ph = document.getElementById('ordersPartyHeader');
+    if (ph) ph.textContent = 'Alıcı';
+  } else if (role === 'customer') {
+    // or() ile her iki kolonu kapsıyoruz — RLS ne izin veriyorsa o gelir
+    query = query.eq('buyer_id', currentUser.id);
+    const ph = document.getElementById('ordersPartyHeader');
+    if (ph) ph.textContent = 'Satıcı';
+  } else {
+    const ph = document.getElementById('ordersPartyHeader');
+    if (ph) ph.textContent = 'Alıcı / Satıcı';
+  }
+  // admin, logistics, finance → filtre yok, tümünü görür
+
+  if (filter !== 'all') query = query.eq('order_status', filter);
+  const { data } = await query;
+  allOrders = data || [];
+  renderOrdersTable(allOrders);
+
+  // orders/store_orders KONSOLİDASYON — Faz 1: aynı sayfada, ayrı tablo.
+  loadStoreOrders();
+}
+
+// ─── STORE ORDERS (yeni: Canlı Satış / Bayi Vitrini sistemi) ──────────
+// orders'tan FARKLI bir tablo — kendi kolon/durum setine sahip (bkz.
+// order_status_enum). Escrow/fatura/PDF akışı bu tabloda henüz YOK, bu
+// yüzden buradaki aksiyonlar bilerek sade (sadece görüntüleme).
+async function loadStoreOrders() {
+  const role = currentProfile?.role;
+  const tbody = q('storeOrdersTable');
+  if (!tbody) return;
+
+  let query = sb.from('store_orders')
+    .select('*, stores(name, owner_id), store_order_items(id, product_name, quantity, unit_price, total_price)')
+    .order('created_at', { ascending: false }).limit(50);
+
+  if (role === 'dealer') {
+    // store_orders.store_id -> stores.owner_id = ben olan mağazalar
+    const { data: myStores } = await sb.from('stores').select('id').eq('owner_id', currentUser.id);
+    const storeIds = (myStores || []).map(s => s.id);
+    if (storeIds.length === 0) { tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--muted)">Henüz bir mağazanız yok.</td></tr>'; return; }
+    query = query.in('store_id', storeIds);
+  } else if (role === 'customer') {
+    query = query.eq('customer_id', currentUser.id);
+  } else if (!['admin', 'logistics', 'finance'].includes(role)) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--muted)">—</td></tr>';
+    return;
+  }
+  // admin, logistics, finance → filtresiz, tümünü görür
+
+  const { data, error } = await query;
+  if (error) { console.error('[loadStoreOrders]', error); tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--red)">Yüklenemedi</td></tr>'; return; }
+  renderStoreOrdersTable(data || []);
+}
+
+function renderStoreOrdersTable(orders) {
+  const tbody = q('storeOrdersTable');
+  if (!tbody) return;
+  tbody.innerHTML = orders.length ? orders.map(o => {
+    const items = (o.store_order_items || []).map(i => `${i.product_name} ×${i.quantity}`).join(', ') || '—';
+    const paymentLabel = o.payment_method === 'card_pos' ? 'Kart/POS' : 'Nakit';
+    const paymentTag = o.payment_confirmed
+      ? `<span class="tag tag-green">${paymentLabel} — Onaylı</span>`
+      : `<span class="tag tag-amber">${paymentLabel} — Bekliyor</span>`;
+    return `<tr>
+      <td style="font-family:'Courier New',monospace;font-size:11px">${o.id.slice(0,8)}</td>
+      <td style="font-size:11px">${o.stores?.name || '—'}</td>
+      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;font-size:11px" title="${items}">${items}</td>
+      <td style="font-family:'Courier New',monospace;font-weight:900;color:var(--gold)">${fmt(o.total_amount)}</td>
+      <td>${paymentTag}</td>
+      <td>${statusTag(o.status)}</td>
+      <td>${o.placed_from_live ? '<span class="tag tag-red"><i class="fas fa-video"></i> Canlı</span>' : '<span class="tag tag-gray">Vitrin</span>'}</td>
+      <td style="font-size:11px">${fmtDate(o.created_at)}</td>
+    </tr>`;
+  }).join('')
+  : '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--muted)">Canlı satış siparişi yok</td></tr>';
+}
+
+function renderOrdersTable(orders) {
+  const role = currentProfile?.role;
+  const isDealer = role === 'dealer';
+  const isCustomer = role === 'customer';
+
+  q('ordersTable').innerHTML = orders.length ? orders.map(o => {
+    // Karşı taraf bilgisi: satıcıya alıcıyı, alıcıya satıcıyı göster
+    const counterParty = isCustomer
+      ? (o.profiles_seller?.full_name || o.profiles_seller?.company_name || '—')
+      : (o.profiles_buyer?.full_name  || o.profiles_buyer?.company_name  || '—');
+    const counterLabel = isCustomer ? 'Satıcı' : 'Alıcı';
+
+    // Fatura Kes sadece bayiye (dealer) görünür; fatura zaten kesilmişse pasif
+    const existingInvoice = (o.invoices || []).find(inv => inv.status !== 'cancelled');
+    const invoiceBtn = isDealer
+      ? existingInvoice
+        ? `<button class="btn btn-sm" style="background:rgba(100,100,100,.12);border:1px solid rgba(100,100,100,.25);color:var(--muted);cursor:not-allowed;opacity:.6" disabled title="Fatura kesildi: ${existingInvoice.invoice_number || ''}"><i class="fas fa-file-invoice"></i>Fatura Kesildi</button>`
+        : `<button class="btn btn-sm" style="background:rgba(16,185,129,.15);border:1px solid rgba(16,185,129,.3);color:var(--green)" onclick="openInvoiceCreateModal('${o.id}')"><i class="fas fa-file-invoice"></i>Fatura Kes</button>`
+      : '';
+
+    // Ödeme Onayla — sadece admin/finance, sadece "Ödeme Bekliyor" durumunda
+    const payApproveBtn = (role === 'admin' || role === 'finance') && o.order_status === 'PENDING_PAYMENT'
+      ? `<button class="btn btn-green btn-sm" onclick="approveOrderPayment('${o.id}')"><i class="fas fa-check"></i>Ödeme Onayla</button>`
+      : '';
+
+    // Teslim Aldım — sadece alıcı (customer/influencer), sadece "Kargoda" durumunda
+    const confirmDeliveryBtn = isCustomer && o.order_status === 'SHIPPED' && !o.buyer_delivery_confirmed
+      ? `<button class="btn btn-green btn-sm" onclick="confirmDeliveryByBuyer('${o.id}')" title="${o.auto_confirm_at ? 'Onaylamazsanız ' + fmtDate(o.auto_confirm_at) + ' tarihinde otomatik onaylanır' : ''}"><i class="fas fa-box-open"></i>Teslim Aldım</button>`
+      : '';
+
+    return `<tr>
+      <td style="font-family:'Courier New',monospace;font-weight:700;font-size:11px">${o.order_number || o.id.slice(0,8)}</td>
+      <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;font-size:11px" title="${(o.order_items||[]).map(i=>i.products?.title||'Ürün').join(', ')}">${(o.order_items||[]).length > 0 ? (o.order_items||[]).map(i=>`${i.products?.title||'Ürün'}`).join(', ') : (o.products?.title || '—')}</td>
+      <td style="font-size:11px;color:var(--muted2)" title="${counterLabel}">${counterParty}</td>
+      <td style="font-family:'Courier New',monospace;font-weight:900;color:var(--gold)">${fmt(o.total_amount)}</td>
+      <td>${statusTag(o.payment_status)}</td>
+      <td>${statusTag(o.shipping_status)}</td>
+      <td>${statusTag(o.escrow_status)}</td>
+      <td style="font-size:11px">${fmtDate(o.created_at)}</td>
+      <td>
+        <button class="btn btn-ghost btn-sm" onclick="viewOrderDetail('${o.id}')"><i class="fas fa-eye"></i></button>
+        <button class="btn btn-ghost btn-sm" onclick="generateOrderPDF('${o.id}')"><i class="fas fa-file-pdf"></i>PDF</button>
+        ${invoiceBtn}
+        ${payApproveBtn}
+        ${confirmDeliveryBtn}
+      </td>
+    </tr>`;
+  }).join('')
+  : '<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--muted)">Sipariş bulunamadı</td></tr>';
+}
+
+window.filterOrders = function(filter, el) {
+  document.querySelectorAll('#page-orders .pill-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  loadOrders(filter);
+};
+
+window.viewOrderDetail = function(id) {
+  const o = allOrders.find(x => x.id === id);
+  if (!o) return;
+  alert(`Sipariş Detay\n${o.order_number}\nTutar: ${fmt(o.total_amount)}\nPlatform Kom: ${fmt(o.platform_commission)}\nNet Satıcı: ${fmt(o.seller_net_amount)}\nOtomatik onay: ${fmtDT(o.auto_confirm_at)}`);
+};
+
+window.generateOrderPDF = function(id) {
+  const o = allOrders.find(x => x.id === id);
+  if (!o || !window.jspdf) { toast('PDF kütüphanesi yükleniyor...', 'info'); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  const W = 210, H = 297;
+
+  // Türkçe karakter normalize
+  const tr = s => (s||'').replace(/ğ/g,'g').replace(/Ğ/g,'G').replace(/ü/g,'u').replace(/Ü/g,'U')
+    .replace(/ş/g,'s').replace(/Ş/g,'S').replace(/ı/g,'i').replace(/İ/g,'I')
+    .replace(/ö/g,'o').replace(/Ö/g,'O').replace(/ç/g,'c').replace(/Ç/g,'C');
+
+  // ── HEADER BAR ──────────────────────────────────────────────────
+  doc.setFillColor(10, 18, 32);
+  doc.rect(0, 0, W, 38, 'F');
+
+  // Accent çizgi
+  doc.setFillColor(212, 175, 55);
+  doc.rect(0, 38, W, 2, 'F');
+
+  // Logo text
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(22);
+  doc.setTextColor(212, 175, 55);
+  doc.text('DAMPINGVAR', 14, 17);
+  doc.setFontSize(9);
+  doc.setTextColor(163, 179, 209);
+  doc.text(tr('B2B Toptan Ticaret Platformu'), 14, 25);
+  doc.setFontSize(8);
+  doc.setTextColor(100, 120, 150);
+  doc.text('www.dampingvar.com.tr', 14, 32);
+
+  // Belge tipi sağ üst
+  doc.setFontSize(13);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(226, 232, 240);
+  doc.text(tr('SİPARİŞ BELGESİ'), W - 14, 17, { align: 'right' });
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(163, 179, 209);
+  doc.text(`No: ${o.order_number || o.id.slice(0,8)}`, W - 14, 25, { align: 'right' });
+  doc.text(`Tarih: ${fmtDate(o.created_at)}`, W - 14, 32, { align: 'right' });
+
+  // ── TARAF BİLGİLERİ ────────────────────────────────────────────
+  let y = 50;
+  const colL = 14, colR = W / 2 + 4, colW = W / 2 - 18;
+
+  // Sol: Satıcı kutusu
+  doc.setFillColor(240, 244, 250);
+  doc.roundedRect(colL, y, colW, 36, 2, 2, 'F');
+  doc.setFillColor(212, 175, 55);
+  doc.roundedRect(colL, y, colW, 7, 2, 2, 'F');
+  doc.rect(colL, y + 4, colW, 3, 'F'); // düz alt köşe
+  doc.setFontSize(7.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(10, 18, 32);
+  doc.text(tr('SATICI'), colL + 3, y + 5.5);
+  doc.setFont('helvetica', 'normal'); doc.setTextColor(30, 40, 60); doc.setFontSize(8.5);
+  const sellerName = tr(o.profiles_seller?.company_name || o.profiles_seller?.full_name || '—');
+  doc.text(sellerName, colL + 3, y + 15);
+  doc.setFontSize(7.5); doc.setTextColor(80, 100, 130);
+
+  // Sağ: Alıcı kutusu
+  doc.setFillColor(240, 244, 250);
+  doc.roundedRect(colR, y, colW, 36, 2, 2, 'F');
+  doc.setFillColor(30, 100, 200);
+  doc.roundedRect(colR, y, colW, 7, 2, 2, 'F');
+  doc.rect(colR, y + 4, colW, 3, 'F');
+  doc.setFontSize(7.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(255, 255, 255);
+  doc.text(tr('ALICI'), colR + 3, y + 5.5);
+  doc.setFont('helvetica', 'normal'); doc.setTextColor(30, 40, 60); doc.setFontSize(8.5);
+  const buyerName = tr(o.profiles_buyer?.company_name || o.profiles_buyer?.full_name || '—');
+  doc.text(buyerName, colR + 3, y + 15);
+
+  // ── DURUM KUTUCUKLARI ──────────────────────────────────────────
+  y += 44;
+  const statuses = [
+    { label: tr('Sipariş Durumu'), val: tr(o.order_status || '—'), color: [30,100,200] },
+    { label: tr('Ödeme'),          val: tr(o.payment_status || '—'), color: [16,185,129] },
+    { label: tr('Kargo'),          val: tr(o.shipping_status || '—'), color: [245,158,11] },
+    { label: 'Escrow',             val: tr(o.escrow_status || '—'),   color: [139,92,246] },
+  ];
+  const sW = (W - 28) / 4;
+  statuses.forEach((s, i) => {
+    const sx = 14 + i * (sW + 2);
+    doc.setFillColor(...s.color);
+    doc.roundedRect(sx, y, sW, 14, 1.5, 1.5, 'F');
+    doc.setFillColor(255,255,255,30);
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(6.5); doc.setFont('helvetica', 'normal');
+    doc.text(s.label, sx + sW/2, y + 5, { align: 'center' });
+    doc.setFontSize(8); doc.setFont('helvetica', 'bold');
+    doc.text(s.val, sx + sW/2, y + 11, { align: 'center' });
+  });
+
+  // ── ÜRÜN TABLOSU ────────────────────────────────────────────────
+  y += 22;
+  const items = o.order_items || [];
+
+  // Tablo header
+  doc.setFillColor(10, 18, 32);
+  doc.rect(14, y, W - 28, 8, 'F');
+  doc.setTextColor(212, 175, 55); doc.setFontSize(7.5); doc.setFont('helvetica', 'bold');
+  const cols = [
+    { label: tr('ÜRÜN / AÇIKLAMA'), x: 17, w: 80 },
+    { label: tr('MİKTAR'),          x: 100, w: 25 },
+    { label: tr('BİRİM FİYAT'),     x: 128, w: 30 },
+    { label: 'KDV %',               x: 161, w: 18 },
+    { label: tr('TUTAR'),           x: 182, w: 24 },
+  ];
+  cols.forEach(c => doc.text(c.label, c.x, y + 5.5));
+  y += 8;
+
+  // Satırlar
+  if (items.length > 0) {
+    items.forEach((item, idx) => {
+      const rowH = 9;
+      doc.setFillColor(idx % 2 === 0 ? 248 : 255, idx % 2 === 0 ? 250 : 255, idx % 2 === 0 ? 253 : 255);
+      doc.rect(14, y, W - 28, rowH, 'F');
+      doc.setDrawColor(220, 228, 240);
+      doc.line(14, y + rowH, W - 14, y + rowH);
+      doc.setTextColor(20, 30, 50); doc.setFontSize(8); doc.setFont('helvetica', 'normal');
+      const pTitle = tr(item.products?.title || 'Urun');
+      doc.text(pTitle.length > 42 ? pTitle.slice(0,42)+'...' : pTitle, 17, y + 6);
+      doc.text(String(item.quantity || 0), 112, y + 6, { align: 'right' });
+      doc.text(fmt(item.unit_price), 155, y + 6, { align: 'right' });
+      doc.text(`%${item.tax_rate || 20}`, 178, y + 6, { align: 'right' });
+      doc.setFont('helvetica', 'bold');
+      doc.text(fmt(item.total_price), 196, y + 6, { align: 'right' });
+      y += rowH;
+    });
+  } else {
+    // order_items yoksa orders'daki veriden tek satır
+    doc.setFillColor(248, 250, 253);
+    doc.rect(14, y, W - 28, 9, 'F');
+    doc.setTextColor(20, 30, 50); doc.setFontSize(8); doc.setFont('helvetica', 'normal');
+    const pTitle = tr(o.products?.title || 'Urun / Hizmet');
+    doc.text(pTitle, 17, y + 6);
+    doc.setFont('helvetica', 'bold');
+    doc.text(fmt(o.total_amount), 196, y + 6, { align: 'right' });
+    y += 9;
+  }
+
+  // ── TOPLAM KUTUSU ───────────────────────────────────────────────
+  y += 4;
+  const taxAmt = (o.tax_amount || 0);
+  const totals = [
+    { label: tr('Ara Toplam (Matrah)'), val: fmt(o.total_amount - taxAmt - (o.shipping_price||0)) },
+    { label: `KDV (%${o.tax_rate || 20})`,             val: fmt(taxAmt) },
+    { label: tr('Kargo'),              val: fmt(o.shipping_price || 0) },
+  ];
+  const totX = W - 14 - 70;
+  totals.forEach(t => {
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(60, 80, 110);
+    doc.text(tr(t.label), totX, y); 
+    doc.setTextColor(20, 30, 50);
+    doc.text(t.val, W - 14, y, { align: 'right' });
+    y += 7;
+  });
+  // Toplam çizgisi + kutu
+  doc.setFillColor(10, 18, 32);
+  doc.roundedRect(totX - 4, y - 2, W - 14 - totX + 18, 12, 2, 2, 'F');
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(212, 175, 55);
+  doc.text(tr('GENEL TOPLAM'), totX, y + 7);
+  doc.setTextColor(255, 255, 255);
+  doc.text(fmt(o.total_amount), W - 16, y + 7, { align: 'right' });
+  y += 18;
+
+  // ── NOTLAR / PLATFORM BİLGİSİ ──────────────────────────────────
+  if (o.tracking_number) {
+    doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(60,80,110);
+    doc.text(tr(`Takip No: ${o.tracking_number}`), 14, y); y += 7;
+  }
+
+  // ── FOOTER ─────────────────────────────────────────────────────
+  doc.setFillColor(10, 18, 32);
+  doc.rect(0, H - 16, W, 16, 'F');
+  doc.setFillColor(212, 175, 55);
+  doc.rect(0, H - 17, W, 1, 'F');
+  doc.setFontSize(7); doc.setFont('helvetica', 'normal'); doc.setTextColor(163, 179, 209);
+  doc.text('DampingVar B2B Ticaret Platformu  |  www.dampingvar.com.tr', W/2, H - 9, { align: 'center' });
+  doc.setTextColor(100, 120, 150);
+  doc.text(tr(`Belge: ${o.order_number || o.id.slice(0,8)}  |  Olusturulma: ${fmtDT(new Date())}`), W/2, H - 4, { align: 'center' });
+
+  doc.save(`siparis-${o.order_number || o.id.slice(0,8)}.pdf`);
+  toast('PDF indirildi');
+};
+
+// ─── INVOICES ─────────────────────────────────────────────────────
+let invFilterType = 'all';
+let currentViewInvoice = null;
+
+async function loadInvoices() {
+  const role = currentProfile?.role;
+
+  // Page title & party header
+  if (role === 'dealer') {
+    q('invoicesPageTitle').textContent = 'Satış Fatura Listesi';
+    q('invPartyHeader').textContent = 'Alıcı';
+    q('invUserFilterWrap').style.display = 'none';
+  } else if (role === 'customer') {
+    q('invoicesPageTitle').textContent = 'Alış Fatura Listesi';
+    q('invPartyHeader').textContent = 'Satıcı';
+    q('invUserFilterWrap').style.display = 'none';
+  } else {
+    q('invoicesPageTitle').textContent = 'Fatura Listesi (Tümü)';
+    q('invPartyHeader').textContent = 'Alıcı / Satıcı';
+    q('invUserFilterWrap').style.display = 'block';
+  }
+
+  let query = sb.from('invoices')
+    .select('*, orders(order_number,total_amount), profiles_buyer:buyer_id(full_name,company_name), profiles_seller:seller_id(full_name,company_name)')
+    .order('invoice_date', { ascending: false }).limit(100);
+
+  if (role === 'dealer') query = query.eq('seller_id', currentUser.id);
+  else if (role === 'customer') query = query.eq('buyer_id', currentUser.id);
+
+  const { data } = await query;
+  allInvoices = data || [];
+  applyInvoiceFilters();
+}
+
+window.filterInvoiceType = function(type, el) {
+  invFilterType = type;
+  document.querySelectorAll('#invoiceTypeTabs .pill-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  applyInvoiceFilters();
+};
+
+window.applyInvoiceFilters = function() {
+  let list = [...allInvoices];
+
+  // Type filter
+  if (invFilterType !== 'all') {
+    list = list.filter(inv => inv.invoice_type === invFilterType);
+  }
+
+  // Date from
+  const from = q('invFilterDateFrom')?.value;
+  if (from) list = list.filter(inv => (inv.invoice_date || inv.created_at) >= from);
+
+  // Date to
+  const to = q('invFilterDateTo')?.value;
+  if (to) list = list.filter(inv => (inv.invoice_date || inv.created_at) <= to + 'T23:59:59');
+
+  // User search (admin only)
+  const userQ = (q('invFilterUser')?.value || '').toLowerCase();
+  if (userQ) {
+    list = list.filter(inv => {
+      const buyerName = (inv.profiles_buyer?.full_name || inv.profiles_buyer?.company_name || '').toLowerCase();
+      const sellerName = (inv.profiles_seller?.full_name || inv.profiles_seller?.company_name || '').toLowerCase();
+      return buyerName.includes(userQ) || sellerName.includes(userQ);
+    });
+  }
+
+  renderInvoicesTable(list);
+};
+
+window.clearInvoiceFilters = function() {
+  if (q('invFilterDateFrom')) q('invFilterDateFrom').value = '';
+  if (q('invFilterDateTo')) q('invFilterDateTo').value = '';
+  if (q('invFilterUser')) q('invFilterUser').value = '';
+  invFilterType = 'all';
+  document.querySelectorAll('#invoiceTypeTabs .pill-tab').forEach(t => t.classList.remove('active'));
+  const firstTab = document.querySelector('#invoiceTypeTabs .pill-tab');
+  if (firstTab) firstTab.classList.add('active');
+  applyInvoiceFilters();
+};
+
+function renderInvoicesTable(invoices) {
+  const role = currentProfile?.role;
+  const typeLabel = {
+    sales: '<span class="tag tag-green">Satış Fatura</span>',
+    purchase: '<span class="tag tag-blue">Alış Fatura</span>',
+    commission: '<span class="tag tag-gold">Komisyon</span>',
+    expense: '<span class="tag tag-gray">Gider</span>',
+    e_invoice: '<span class="tag tag-green"><i class="fas fa-bolt"></i> e-Fatura</span>',
+    e_sales_waybill: '<span class="tag tag-blue"><i class="fas fa-file-alt"></i> e-Satış İrs.</span>',
+    e_transport_waybill: '<span class="tag tag-amber"><i class="fas fa-truck"></i> e-Taşıma İrs.</span>',
+  };
+
+  q('invoicesTable').innerHTML = invoices.length ? invoices.map(inv => {
+    const party = role === 'customer'
+      ? (inv.profiles_seller?.full_name || inv.profiles_seller?.company_name || '—')
+      : (inv.profiles_buyer?.full_name || inv.profiles_buyer?.company_name || '—');
+
+    const hasFile = inv.file_url || inv.pdf_url;
+    const fileBtn = hasFile
+      ? `<a href="${hasFile}" target="_blank" class="btn btn-ghost btn-sm"><i class="fas fa-eye"></i>Görüntüle</a>`
+      : '';
+
+    return `<tr>
+      <td style="font-family:'Courier New',monospace;font-weight:700;font-size:11px">${inv.invoice_number || '—'}</td>
+      <td style="font-size:11px">${inv.orders?.order_number || '—'}</td>
+      <td style="font-size:12px">${party}</td>
+      <td style="font-family:'Courier New',monospace;font-weight:900;color:var(--green)">${fmt(inv.amount)}</td>
+      <td style="font-size:11px">%${inv.tax_rate || 20}</td>
+      <td>${typeLabel[inv.invoice_type] || `<span class="tag tag-gray">${inv.invoice_type || '—'}</span>`}</td>
+      <td style="font-size:11px">${fmtDate(inv.invoice_date || inv.created_at)}</td>
+      <td>${statusTag(inv.status)}</td>
+      <td style="display:flex;gap:4px;flex-wrap:wrap">
+        ${fileBtn}
+        <button class="btn btn-ghost btn-sm" onclick="viewInvoiceDetail('${inv.id}')"><i class="fas fa-search"></i>Detay</button>
+        <button class="btn btn-ghost btn-sm" onclick="generateInvoicePDF('${inv.id}')"><i class="fas fa-file-pdf"></i>PDF</button>
+      </td>
+    </tr>`;
+  }).join('')
+  : '<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--muted)">Fatura bulunamadı</td></tr>';
+}
+
+// ─── INVOICE CREATE MODAL ─────────────────────────────────────────
+let currentInvTab = 'e_invoice';
+// Aynı modal oturumunda kaydedilen e-irsaliye / e-taşıma irsaliyesi bilgileri.
+// e-Fatura sekmesinin açıklama alanına otomatik yansıtmak için tutulur.
+let waybillSession = { sales: null, transport: null };
+
+function composeInvoiceDescFromWaybills(fallbackText) {
+  const parts = [];
+  if (waybillSession.sales) {
+    const s = waybillSession.sales;
+    parts.push(`e-İrsaliye No: ${s.number} (${s.date})${s.goods ? ' — ' + s.goods : ''}${s.delivAddr ? ' | Teslim Yeri: ' + s.delivAddr : ''}`);
+  }
+  if (waybillSession.transport) {
+    const t = waybillSession.transport;
+    parts.push(`e-Taşıma İrsaliyesi No: ${t.number} (${t.date}) — Araç: ${t.plate || '—'} / Sürücü: ${t.driver || '—'} | Yükleme: ${t.loadAddr || '—'} → Teslim: ${t.delivAddr || '—'}${t.goods ? ' | Mal: ' + t.goods : ''}`);
+  }
+  if (!parts.length) return fallbackText || '';
+  return (fallbackText ? fallbackText + '\n\n' : '') + parts.join('\n');
+}
+
+window.switchInvTab = function(tab, el) {
+  currentInvTab = tab;
+  ['e_invoice','e_sales_waybill','e_transport_waybill'].forEach(t => {
+    q('invTab_' + t).style.display = t === tab ? 'block' : 'none';
+  });
+  document.querySelectorAll('#invCreateTabs .pill-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+};
+
+window.openInvoiceCreateModal = async function(preOrderId = null) {
+  q('invoiceCreateAlert').innerHTML = '';
+  currentInvTab = 'e_invoice';
+  waybillSession = { sales: null, transport: null };
+
+  // Reset tabs
+  document.querySelectorAll('#invCreateTabs .pill-tab').forEach((t, i) => { t.classList.toggle('active', i === 0); });
+  ['e_invoice','e_sales_waybill','e_transport_waybill'].forEach(t => {
+    q('invTab_' + t).style.display = t === 'e_invoice' ? 'block' : 'none';
+  });
+
+  // Defaults
+  const today = new Date().toISOString().split('T')[0];
+  ['invCrDate','invCrSwDate','invCrTwDate'].forEach(id => { if (q(id)) q(id).value = today; });
+
+  // Clear all inputs
+  ['invCrNumber','invCrAmount','invCrDesc',
+   'invCrSwNumber','invCrSwAmount','invCrSwDelivAddr','invCrSwGoods',
+   'invCrTwNumber','invCrTwPlate','invCrTwDriver','invCrTwLoadAddr','invCrTwDelivAddr','invCrTwGoods'
+  ].forEach(id => { if (q(id)) q(id).value = ''; });
+
+  // File labels reset
+  [['invCrFileName','e-Fatura PDF veya görsel seçin'],
+   ['invCrSwFileName','e-Satış İrsaliyesi PDF veya görsel seçin'],
+   ['invCrTwFileName','e-Taşıma İrsaliyesi PDF veya görsel seçin']].forEach(([id, txt]) => { if (q(id)) q(id).textContent = txt; });
+  ['invCrPreview','invCrSwPreview','invCrTwPreview'].forEach(id => { if (q(id)) { q(id).style.display = 'none'; q(id).innerHTML = ''; } });
+  ['invCrFile','invCrSwFile','invCrTwFile'].forEach(id => { if (q(id)) q(id).value = ''; });
+  if (q('invCrTotalBox')) q('invCrTotalBox').style.display = 'none';
+
+  // Sipariş banner sıfırla
+  q('invCrOrderId').value = preOrderId || '';
+  q('invCrOrderBanner').style.display = 'none';
+  q('invCrOrderInfo').innerHTML = '';
+
+  // Eğer "Fatura Kes" butonundan geliyorsa → sipariş bilgisini çek, otomatik doldur
+  if (preOrderId) {
+    const { data: ord } = await sb.from('orders')
+      .select('id,order_number,total_amount,products!fk_orders_product(title),profiles_buyer:buyer_id(full_name,company_name),profiles_seller:seller_id(full_name,company_name),order_items(id,product_id,quantity,unit_price,total_price,tax_rate,tax_amount,total_with_tax,products!order_items_product_id_fkey(title))')
+      .eq('id', preOrderId).single();
+    if (ord) {
+      const amount = ord.total_amount || 0;
+      const items = ord.order_items || [];
+      // order_items varsa tüm kalemleri kullan, yoksa orders.products'tan tek kalem
+      const title = items.length > 0
+        ? items.map(i => `${i.products?.title || 'Ürün'} x${i.quantity}`).join(', ')
+        : (ord.products?.title || '');
+      const descLines = items.length > 0
+        ? items.map(i => `${i.products?.title || 'Ürün'} — ${i.quantity} adet x ${fmt(i.unit_price)} = ${fmt(i.total_price)}`).join('\n')
+        : title;
+      const buyer = ord.profiles_buyer?.full_name || ord.profiles_buyer?.company_name || '';
+      const seller = ord.profiles_seller?.full_name || ord.profiles_seller?.company_name || '';
+      const orderNo = ord.order_number || ord.id.slice(0,8);
+
+      // Otomatik doldur
+      if (q('invCrAmount')) q('invCrAmount').value = amount;
+      if (q('invCrSwAmount')) q('invCrSwAmount').value = amount;
+      if (q('invCrSwGoods')) q('invCrSwGoods').value = title;
+      if (q('invCrTwGoods')) q('invCrTwGoods').value = title;
+
+      // Bu sipariş için daha önce kaydedilmiş e-irsaliye / e-taşıma irsaliyesi var mı?
+      // Varsa session'a al ki e-Fatura açıklaması otomatik onlardan oluşsun.
+      const { data: existingWaybills } = await sb.from('invoices')
+        .select('invoice_type,invoice_number,invoice_date,description,notes')
+        .eq('order_id', preOrderId)
+        .in('invoice_type', ['e_sales_waybill', 'e_transport_waybill'])
+        .neq('status', 'cancelled')
+        .order('created_at', { ascending: false });
+      (existingWaybills || []).forEach(w => {
+        if (w.invoice_type === 'e_sales_waybill' && !waybillSession.sales) {
+          let notes = {}; try { notes = JSON.parse(w.notes || '{}'); } catch (e) {}
+          waybillSession.sales = { number: w.invoice_number, date: w.invoice_date, goods: w.description, delivAddr: notes.delivery_address || '' };
+        }
+        if (w.invoice_type === 'e_transport_waybill' && !waybillSession.transport) {
+          let notes = {}; try { notes = JSON.parse(w.notes || '{}'); } catch (e) {}
+          waybillSession.transport = { number: w.invoice_number, date: w.invoice_date, goods: w.description, plate: notes.plate || '', driver: notes.driver || '', loadAddr: notes.load_address || '', delivAddr: notes.delivery_address || '' };
+        }
+      });
+
+      if (q('invCrDesc')) q('invCrDesc').value = composeInvoiceDescFromWaybills(descLines || `${title} — ${orderNo}`);
+
+      // Banner göster
+      q('invCrOrderBanner').style.display = 'block';
+      const itemCount = items.length > 1 ? ` (${items.length} kalem)` : '';
+      q('invCrOrderInfo').innerHTML =
+        `<span style="color:var(--gold);font-weight:700">${orderNo}</span>`
+        + (title ? `&nbsp;&nbsp;·&nbsp;&nbsp;${title.length > 60 ? title.slice(0,60)+'…' : title}${itemCount}` : '')
+        + `&nbsp;&nbsp;·&nbsp;&nbsp;<span style="color:var(--green);font-weight:700">${fmt(amount)}</span>`
+        + (buyer ? `&nbsp;&nbsp;·&nbsp;&nbsp;Alıcı: ${buyer}` : '')
+        + (seller ? `&nbsp;&nbsp;·&nbsp;&nbsp;Satıcı: ${seller}` : '');
+
+      calcInvTotal();
+    }
+  }
+
+  q('invoiceCreateModal').classList.add('open');
+};
+
+window.calcInvTotal = function() {
+  const amount = parseFloat(q('invCrAmount')?.value) || 0;
+  const taxPct = parseInt(q('invCrTax')?.value) || 0;
+  if (!amount) { if (q('invCrTotalBox')) q('invCrTotalBox').style.display = 'none'; return; }
+  const taxAmt = amount * taxPct / 100;
+  const total = amount + taxAmt;
+  if (q('invCrTotalBox')) q('invCrTotalBox').style.display = 'block';
+  if (q('invCrBase')) q('invCrBase').textContent = fmt(amount);
+  if (q('invCrTaxAmt')) q('invCrTaxAmt').textContent = fmt(taxAmt);
+  if (q('invCrTotal')) q('invCrTotal').textContent = fmt(total);
+};
+
+window.onInvFileSelect = function(inputId, labelId, previewId) {
+  const file = q(inputId)?.files[0];
+  if (!file) return;
+  q(labelId).textContent = file.name;
+  const prev = q(previewId);
+  if (!prev) return;
+  if (file.type.startsWith('image/')) {
+    const reader = new FileReader();
+    reader.onload = e => {
+      prev.style.display = 'block';
+      prev.innerHTML = `<img src="${e.target.result}" style="max-width:100%;max-height:160px;border-radius:8px;border:1px solid var(--border)">`;
+    };
+    reader.readAsDataURL(file);
+  } else {
+    prev.style.display = 'block';
+    prev.innerHTML = `<div style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:8px;padding:8px 12px;font-size:11px;font-family:'Courier New',monospace;color:var(--red)"><i class="fas fa-file-pdf"></i> ${file.name}</div>`;
+  }
+};
+
+window.saveInvoiceCreate = async function() {
+  const orderId = q('invCrOrderId')?.value || null;
+  let payload = { order_id: orderId || null, seller_id: currentUser.id, status: 'pending' };
+
+  if (currentInvTab === 'e_invoice') {
+    const num = q('invCrNumber')?.value?.trim();
+    const date = q('invCrDate')?.value;
+    if (!num || !date) { q('invoiceCreateAlert').innerHTML = `<div class="alert alert-error"><i class="fas fa-exclamation-circle"></i>Fatura no ve tarih zorunludur</div>`; return; }
+    payload = { ...payload,
+      invoice_number: num, invoice_date: date,
+      amount: parseFloat(q('invCrAmount')?.value) || 0,
+      tax_rate: parseInt(q('invCrTax')?.value) || 20,
+      invoice_type: q('invCrType')?.value || 'e_invoice',
+      description: q('invCrDesc')?.value || '',
+    };
+  } else if (currentInvTab === 'e_sales_waybill') {
+    const num = q('invCrSwNumber')?.value?.trim();
+    const date = q('invCrSwDate')?.value;
+    if (!num || !date) { q('invoiceCreateAlert').innerHTML = `<div class="alert alert-error"><i class="fas fa-exclamation-circle"></i>İrsaliye no ve tarih zorunludur</div>`; return; }
+    payload = { ...payload,
+      invoice_number: num, invoice_date: date,
+      amount: parseFloat(q('invCrSwAmount')?.value) || 0,
+      tax_rate: parseInt(q('invCrSwTax')?.value) || 20,
+      invoice_type: 'e_sales_waybill',
+      description: q('invCrSwGoods')?.value || '',
+      notes: JSON.stringify({ delivery_address: q('invCrSwDelivAddr')?.value || '' }),
+    };
+  } else if (currentInvTab === 'e_transport_waybill') {
+    const num = q('invCrTwNumber')?.value?.trim();
+    const date = q('invCrTwDate')?.value;
+    if (!num || !date) { q('invoiceCreateAlert').innerHTML = `<div class="alert alert-error"><i class="fas fa-exclamation-circle"></i>İrsaliye no ve tarih zorunludur</div>`; return; }
+    payload = { ...payload,
+      invoice_number: num, invoice_date: date,
+      amount: 0, tax_rate: 0,
+      invoice_type: 'e_transport_waybill',
+      description: q('invCrTwGoods')?.value || '',
+      notes: JSON.stringify({
+        plate: q('invCrTwPlate')?.value || '',
+        driver: q('invCrTwDriver')?.value || '',
+        load_address: q('invCrTwLoadAddr')?.value || '',
+        delivery_address: q('invCrTwDelivAddr')?.value || '',
+      }),
+    };
+  }
+
+  const { data: saved, error } = await sb.from('invoices').insert(payload).select().single();
+  if (error) {
+    q('invoiceCreateAlert').innerHTML = `<div class="alert alert-error"><i class="fas fa-exclamation-circle"></i>${error.message}</div>`;
+    return;
+  }
+
+  // İrsaliye sekmeleri: modal'ı KAPATMA — session'a al, e-Fatura sekmesine geç,
+  // açıklamayı otomatik doldur. Kullanıcı fatura no/tarihini girip ayrıca kaydeder.
+  if (currentInvTab === 'e_sales_waybill') {
+    waybillSession.sales = {
+      number: payload.invoice_number, date: payload.invoice_date,
+      goods: payload.description, delivAddr: q('invCrSwDelivAddr')?.value || '',
+    };
+    if (q('invCrDesc')) q('invCrDesc').value = composeInvoiceDescFromWaybills(q('invCrDesc')?.value?.split('\n\ne-')[0] || '');
+    toast('e-İrsaliye kaydedildi! Bilgiler e-Fatura açıklamasına eklendi.');
+    document.querySelectorAll('#invCreateTabs .pill-tab')[0].click(); // e-Fatura sekmesine geç
+    return;
+  }
+  if (currentInvTab === 'e_transport_waybill') {
+    waybillSession.transport = {
+      number: payload.invoice_number, date: payload.invoice_date, goods: payload.description,
+      plate: q('invCrTwPlate')?.value || '', driver: q('invCrTwDriver')?.value || '',
+      loadAddr: q('invCrTwLoadAddr')?.value || '', delivAddr: q('invCrTwDelivAddr')?.value || '',
+    };
+    if (q('invCrDesc')) q('invCrDesc').value = composeInvoiceDescFromWaybills(q('invCrDesc')?.value?.split('\n\ne-')[0] || '');
+    toast('e-Taşıma İrsaliyesi kaydedildi! Bilgiler e-Fatura açıklamasına eklendi.');
+    document.querySelectorAll('#invCreateTabs .pill-tab')[0].click(); // e-Fatura sekmesine geç
+    return;
+  }
+
+  // e-Fatura kaydedildi → sipariş varsa: Hazırlanıyor'dan Kargoda'ya geçir,
+  // fatura/irsaliye numaralarını orders'a yaz, 7 günlük otomatik teslim onayı için
+  // auto_confirm_at ayarla (alıcı erken onaylarsa escrow daha önce serbest kalır).
+  if (orderId) {
+    const wb = waybillSession.sales || waybillSession.transport;
+    const orderUpdate = {
+      invoice_number: payload.invoice_number, invoice_date: payload.invoice_date,
+    };
+    if (wb) { orderUpdate.waybill_number = wb.number; orderUpdate.waybill_date = wb.date; }
+
+    const { data: ordRow } = await sb.from('orders').select('order_status').eq('id', orderId).single();
+    if (ordRow && ordRow.order_status === 'PROCESSING') {
+      orderUpdate.order_status = 'SHIPPED';
+      orderUpdate.shipping_status = 'SHIPPED';
+      const autoConfirm = new Date(); autoConfirm.setDate(autoConfirm.getDate() + 7);
+      orderUpdate.auto_confirm_at = autoConfirm.toISOString();
+    }
+    await sb.from('orders').update(orderUpdate).eq('id', orderId);
+  }
+
+  toast('Fatura kaydedildi! Sipariş Kargoda durumuna geçti.');
+  closeModal('invoiceCreateModal');
+  loadInvoices();
+  loadOrders();
+};
+
+window.viewInvoiceDetail = function(id) {
+  const inv = allInvoices.find(x => x.id === id);
+  if (!inv) return;
+  currentViewInvoice = inv;
+  const typeNames = {
+    sales: 'Satış Faturası', purchase: 'Alış Faturası', commission: 'Komisyon Faturası',
+    expense: 'Gider Faturası', e_invoice: 'e-Fatura', e_sales_waybill: 'e-Satış İrsaliyesi',
+    e_transport_waybill: 'e-Taşıma İrsaliyesi',
+  };
+  let notes = {};
+  try { notes = JSON.parse(inv.notes || '{}'); } catch(e) { notes = {}; }
+
+  const taxAmt = (inv.amount || 0) * (inv.tax_rate || 0) / 100;
+  const total = (inv.amount || 0) + taxAmt;
+
+  q('invoiceViewBody').innerHTML = `
+    <div style="background:rgba(212,175,55,.06);border:1px solid rgba(212,175,55,.2);border-radius:12px;padding:16px;margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
+        <div>
+          <div style="font-size:18px;font-weight:900;font-family:'Courier New',monospace;color:var(--gold)">${inv.invoice_number || '—'}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px">${typeNames[inv.invoice_type] || inv.invoice_type}</div>
+        </div>
+        <div style="text-align:right">
+          ${statusTag(inv.status)}
+          <div style="font-size:11px;color:var(--muted);margin-top:4px">${fmtDate(inv.invoice_date || inv.created_at)}</div>
+        </div>
+      </div>
+    </div>
+    <div class="grid-2" style="margin-bottom:14px">
+      <div class="card-sm"><div class="stat-label">SİPARİŞ NO</div><div style="font-family:'Courier New',monospace;font-weight:700">${inv.orders?.order_number || '—'}</div></div>
+      <div class="card-sm"><div class="stat-label">ALICI</div><div>${inv.profiles_buyer?.full_name || inv.profiles_buyer?.company_name || '—'}</div></div>
+      <div class="card-sm"><div class="stat-label">SATICI</div><div>${inv.profiles_seller?.full_name || inv.profiles_seller?.company_name || '—'}</div></div>
+      <div class="card-sm"><div class="stat-label">TOPLAM TUTAR</div><div style="font-family:'Courier New',monospace;font-weight:900;color:var(--green)">${fmt(total)}</div></div>
+    </div>
+    ${inv.amount ? `<div style="background:rgba(16,185,129,.07);border:1px solid rgba(16,185,129,.2);border-radius:10px;padding:10px 14px;font-family:'Courier New',monospace;font-size:12px;margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">Matrah</span><span>${fmt(inv.amount)}</span></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">KDV (%${inv.tax_rate||0})</span><span>${fmt(taxAmt)}</span></div>
+      <div style="display:flex;justify-content:space-between;font-weight:900;color:var(--green);border-top:1px solid rgba(255,255,255,.1);margin-top:6px;padding-top:6px"><span>TOPLAM</span><span>${fmt(total)}</span></div>
+    </div>` : ''}
+    ${inv.description ? `<div class="form-group"><div class="form-label">AÇIKLAMA / MAL HİZMET</div><div style="font-size:12px;padding:8px 10px;background:rgba(0,0,0,.2);border-radius:8px">${inv.description}</div></div>` : ''}
+    ${notes.plate ? `<div class="grid-2"><div class="card-sm"><div class="stat-label">ARAÇ PLAKA</div><div class="font-mono">${notes.plate}</div></div><div class="card-sm"><div class="stat-label">SÜRÜCÜ</div><div>${notes.driver||'—'}</div></div></div>` : ''}
+    ${notes.delivery_address ? `<div class="form-group"><div class="form-label">TESLİM ADRESİ</div><div style="font-size:12px">${notes.delivery_address}</div></div>` : ''}
+    ${notes.load_address ? `<div class="form-group"><div class="form-label">YÜKLEME ADRESİ</div><div style="font-size:12px">${notes.load_address}</div></div>` : ''}
+    ${(inv.file_url || inv.pdf_url) ? `<div style="margin-top:12px"><a href="${inv.file_url||inv.pdf_url}" target="_blank" class="btn btn-green" style="width:100%"><i class="fas fa-eye"></i>Belgeyi Görüntüle</a></div>` : ''}
+  `;
+  q('invoiceViewModal').classList.add('open');
+};
+
+window.printInvoicePDF = function() {
+  const inv = currentViewInvoice;
+  if (!inv || !window.jspdf) { toast('PDF olusturuluyor...', 'info'); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  const W = 210, H = 297;
+
+  // Türkçe karakter normalize
+  const tr = s => (s||'').replace(/ğ/g,'g').replace(/Ğ/g,'G').replace(/ü/g,'u').replace(/Ü/g,'U')
+    .replace(/ş/g,'s').replace(/Ş/g,'S').replace(/ı/g,'i').replace(/İ/g,'I')
+    .replace(/ö/g,'o').replace(/Ö/g,'O').replace(/ç/g,'c').replace(/Ç/g,'C');
+
+  const typeNames = {
+    sales: tr('SATIS FATURASI'), purchase: tr('ALIS FATURASI'),
+    commission: tr('KOMİSYON FATURASI'), expense: tr('GİDER FATURASI'), credit: tr('KREDİ NOTU')
+  };
+  const typeColors = {
+    sales: [16,185,129], purchase: [30,100,200], commission: [212,175,55],
+    expense: [245,158,11], credit: [139,92,246]
+  };
+  const tColor = typeColors[inv.invoice_type] || [16,185,129];
+  let notes = {}; try { notes = JSON.parse(inv.notes||'{}'); } catch(e) {}
+
+  // ── HEADER ────────────────────────────────────────────────────
+  doc.setFillColor(10, 18, 32);
+  doc.rect(0, 0, W, 42, 'F');
+  // Renkli tip şeridi (sol kenar)
+  doc.setFillColor(...tColor);
+  doc.rect(0, 0, 5, 42, 'F');
+  // Accent çizgi alt
+  doc.rect(0, 42, W, 2, 'F');
+
+  // Logo
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(22);
+  doc.setTextColor(212, 175, 55);
+  doc.text('DAMPINGVAR', 14, 16);
+  doc.setFontSize(9); doc.setFont('helvetica', 'normal');
+  doc.setTextColor(163, 179, 209);
+  doc.text(tr('B2B Toptan Ticaret Platformu'), 14, 24);
+  doc.setFontSize(7.5); doc.setTextColor(100, 120, 150);
+  doc.text('www.dampingvar.com.tr', 14, 31);
+
+  // Belge tipi + numara (sağ)
+  const typeName = typeNames[inv.invoice_type] || 'BELGE';
+  doc.setFontSize(14); doc.setFont('helvetica', 'bold');
+  doc.setTextColor(...tColor);
+  doc.text(typeName, W - 9, 16, { align: 'right' });
+  doc.setFontSize(9.5); doc.setFont('helvetica', 'bold');
+  doc.setTextColor(226, 232, 240);
+  doc.text(inv.invoice_number || '—', W - 9, 25, { align: 'right' });
+  doc.setFontSize(7.5); doc.setFont('helvetica', 'normal');
+  doc.setTextColor(163, 179, 209);
+  doc.text(`Tarih: ${fmtDate(inv.invoice_date || inv.created_at)}`, W - 9, 33, { align: 'right' });
+  doc.text(`Durum: ${tr(inv.status || '—')}`, W - 9, 39, { align: 'right' });
+
+  // ── TARAF BİLGİLERİ ─────────────────────────────────────────
+  let y = 52;
+  const colW = (W - 32) / 2;
+
+  // Satıcı kutusu
+  doc.setFillColor(245, 248, 253);
+  doc.roundedRect(14, y, colW, 40, 2, 2, 'F');
+  doc.setFillColor(...tColor);
+  doc.roundedRect(14, y, colW, 7.5, 2, 2, 'F');
+  doc.rect(14, y + 4, colW, 3.5, 'F');
+  doc.setFontSize(7); doc.setFont('helvetica', 'bold'); doc.setTextColor(255,255,255);
+  doc.text(tr('SATICI / FATURA KESİCİ'), 17, y + 5.5);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(15, 25, 50);
+  doc.text(tr(inv.profiles_seller?.company_name || inv.profiles_seller?.full_name || '—'), 17, y + 16);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(60, 80, 110);
+  // seller extra fields if available
+  y += 8; // offset for inner text baseline
+
+  // Alıcı kutusu
+  const col2 = 14 + colW + 4;
+  doc.setFillColor(245, 248, 253);
+  doc.roundedRect(col2, y - 8, colW, 40, 2, 2, 'F');
+  doc.setFillColor(10, 18, 32);
+  doc.roundedRect(col2, y - 8, colW, 7.5, 2, 2, 'F');
+  doc.rect(col2, y - 4, colW, 3.5, 'F');
+  doc.setFontSize(7); doc.setFont('helvetica', 'bold'); doc.setTextColor(212, 175, 55);
+  doc.text(tr('ALICI / FATURA MUHATABİ'), col2 + 3, y - 2.5);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(15, 25, 50);
+  doc.text(tr(inv.profiles_buyer?.company_name || inv.profiles_buyer?.full_name || '—'), col2 + 3, y + 8);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(60, 80, 110);
+
+  y += 36;
+
+  // ── SİPARİŞ BİLGİSİ ─────────────────────────────────────────
+  if (inv.orders?.order_number) {
+    doc.setFillColor(230, 240, 255);
+    doc.roundedRect(14, y, W - 28, 9, 1.5, 1.5, 'F');
+    doc.setFontSize(7.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(40, 60, 120);
+    doc.text(tr(`Ilgili Siparis No: ${inv.orders.order_number}`), 18, y + 6);
+    y += 13;
+  } else { y += 4; }
+
+  // ── ÜRÜN/HİZMET TABLOSU ─────────────────────────────────────
+  // Tablo header
+  doc.setFillColor(10, 18, 32);
+  doc.rect(14, y, W - 28, 8, 'F');
+  doc.setTextColor(212, 175, 55); doc.setFontSize(7.5); doc.setFont('helvetica', 'bold');
+  const tcols = [
+    { label: tr('ÜRÜN / HİZMET TANIMI'),  x: 17  },
+    { label: tr('MİKTAR'),                x: 118  },
+    { label: tr('BİRİM FİYAT'),           x: 140  },
+    { label: 'KDV %',                     x: 163  },
+    { label: 'KDV TUT.',                  x: 178  },
+    { label: tr('TOPLAM'),                x: 196  },
+  ];
+  tcols.forEach(c => doc.text(c.label, c.x, y + 5.5));
+  y += 8;
+
+  // Açıklama satırı (description'dan)
+  const desc = tr(inv.description || 'Mal / Hizmet');
+  const taxAmt = (inv.amount || 0) * (inv.tax_rate || 20) / 100;
+  const total = (inv.amount || 0) + taxAmt;
+
+  doc.setFillColor(248, 251, 255);
+  doc.rect(14, y, W - 28, 10, 'F');
+  doc.setDrawColor(210, 220, 235); doc.line(14, y + 10, W - 14, y + 10);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(20, 30, 55);
+  const descShort = desc.length > 52 ? desc.slice(0,52)+'...' : desc;
+  doc.text(descShort, 17, y + 6.5);
+  doc.text('1', 122, y + 6.5, { align: 'right' });
+  doc.text(fmt(inv.amount||0), 157, y + 6.5, { align: 'right' });
+  doc.text(`%${inv.tax_rate||20}`, 172, y + 6.5, { align: 'right' });
+  doc.text(fmt(taxAmt), 185, y + 6.5, { align: 'right' });
+  doc.setFont('helvetica', 'bold');
+  doc.text(fmt(total), 196, y + 6.5, { align: 'right' });
+  y += 14;
+
+  // Açıklama uzunsa ek satır
+  if (desc.length > 52) {
+    doc.setFillColor(252, 253, 255);
+    doc.rect(14, y, W - 28, 8, 'F');
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(80, 100, 130);
+    doc.text(desc.slice(52,120), 17, y + 5.5);
+    y += 10;
+  }
+
+  // Kargo/lojistik bilgisi
+  if (notes.plate || notes.driver) {
+    y += 2;
+    doc.setFillColor(245, 248, 250);
+    doc.roundedRect(14, y, W - 28, notes.load_address ? 28 : 18, 1.5, 1.5, 'F');
+    doc.setFontSize(7); doc.setFont('helvetica', 'bold'); doc.setTextColor(80,100,130);
+    doc.text(tr('TAŞIMA BİLGİLERİ'), 17, y + 5.5);
+    doc.setFont('helvetica', 'normal'); doc.setTextColor(30, 45, 70);
+    if (notes.plate)           { doc.text(tr(`Arac Plaka: ${notes.plate}`), 17, y + 12); }
+    if (notes.driver)          { doc.text(tr(`Sofor: ${notes.driver}`), 100, y + 12); }
+    if (notes.load_address)    { doc.text(tr(`Yukleme: ${notes.load_address}`), 17, y + 19); }
+    if (notes.delivery_address){ doc.text(tr(`Teslimat: ${notes.delivery_address}`), 100, y + 19); }
+    y += notes.load_address ? 34 : 24;
+  }
+
+  // ── TOPLAM BÖLÜMÜ ─────────────────────────────────────────────
+  y += 4;
+  const totRows = [
+    { label: tr('Ara Toplam (Matrah)'), val: fmt(inv.amount || 0), bold: false },
+    { label: `KDV (%${inv.tax_rate||20})`,       val: fmt(taxAmt),           bold: false },
+    { label: tr('GENEL TOPLAM'),         val: fmt(total),            bold: true  },
+  ];
+  const totBoxX = W - 14 - 80;
+  totRows.forEach((row, i) => {
+    if (row.bold) {
+      doc.setFillColor(10, 18, 32);
+      doc.roundedRect(totBoxX - 4, y - 1, 84, 11, 2, 2, 'F');
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
+      doc.setTextColor(212, 175, 55);
+      doc.text(row.label, totBoxX, y + 6.5);
+      doc.setTextColor(255, 255, 255);
+      doc.text(row.val, W - 16, y + 6.5, { align: 'right' });
+      y += 13;
+    } else {
+      doc.setFont('helvetica', i===0?'normal':'normal'); doc.setFontSize(8.5);
+      doc.setTextColor(60, 80, 110);
+      doc.text(row.label, totBoxX, y + 5);
+      doc.setTextColor(20, 30, 55);
+      doc.text(row.val, W - 16, y + 5, { align: 'right' });
+      doc.setDrawColor(210, 220, 235); doc.line(totBoxX - 4, y + 7, W - 14, y + 7);
+      y += 9;
+    }
+  });
+
+  // ── YASAL NOT ────────────────────────────────────────────────
+  y += 6;
+  doc.setFontSize(6.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(140, 160, 185);
+  doc.text(tr('Bu belge DampingVar B2B Ticaret Platformu tarafindan dijital olarak olusturulmustur.'), 14, y);
+  doc.text(tr('Herhangi bir itiraz icin 7 is gunu icerisinde bildirmeniz gerekmektedir.'), 14, y + 5);
+
+  // ── FOOTER ────────────────────────────────────────────────────
+  doc.setFillColor(10, 18, 32);
+  doc.rect(0, H - 18, W, 18, 'F');
+  doc.setFillColor(...tColor);
+  doc.rect(0, H - 19, W, 1, 'F');
+  doc.setFillColor(...tColor);
+  doc.rect(0, H - 18, 5, 18, 'F');
+
+  doc.setFontSize(7.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(212, 175, 55);
+  doc.text('DAMPINGVAR', 12, H - 10);
+  doc.setFont('helvetica', 'normal'); doc.setTextColor(163, 179, 209);
+  doc.text('www.dampingvar.com.tr', 12, H - 5);
+  doc.setTextColor(100, 120, 150);
+  doc.text(tr(`Fatura No: ${inv.invoice_number||'—'}  |  ${fmtDate(inv.invoice_date||inv.created_at)}  |  Sayfa 1/1`), W/2, H - 6, { align: 'center' });
+  doc.setTextColor(60, 80, 100);
+  doc.text(tr(`Olusturulma: ${fmtDT(new Date())}`), W - 9, H - 6, { align: 'right' });
+
+  doc.save(`${inv.invoice_number || 'fatura'}.pdf`);
+  toast('PDF indirildi');
+};
+
+window.generateInvoicePDF = function(id) {
+  const inv = allInvoices.find(x => x.id === id);
+  if (!inv) return;
+  currentViewInvoice = inv;
+  printInvoicePDF();
+};
+
+window.openInvoiceModal = window.openInvoiceCreateModal; // backward compat
+
+window.saveInvoice = async function() {
+  const { error } = await sb.from('invoices').insert({
+    invoice_number: q('invNumber')?.value,
+    invoice_date: q('invDate')?.value,
+    order_id: q('invOrderId')?.value || null,
+    amount: parseFloat(q('invAmount')?.value) || 0,
+    tax_rate: parseInt(q('invTax')?.value),
+    invoice_type: q('invType')?.value,
+    description: q('invDesc')?.value,
+    seller_id: currentUser.id,
+    status: 'pending',
+  });
+  if (error) {
+    const alertEl = q('invoiceModalAlert') || q('invoiceCreateAlert');
+    if (alertEl) alertEl.innerHTML = `<div class="alert alert-error"><i class="fas fa-exclamation-circle"></i>${error.message}</div>`;
+  } else {
+    toast('Fatura kaydedildi');
+    closeModal('invoiceModal');
+    closeModal('invoiceCreateModal');
+    loadInvoices();
+  }
+};
+
+// ─── LOJİSTİK ─────────────────────────────────────────────────────
+async function loadLogistics() {
+  const { data } = await sb.from('waybills')
+    .select('*, orders(order_number), logistics_companies(name), vehicles(plate), drivers(name)')
+    .order('created_at', { ascending: false }).limit(50);
+  const waybills = data || [];
+  q('logisticsTable').innerHTML = waybills.length ? waybills.map(w => `
+    <tr>
+      <td style="font-family:'Courier New',monospace;font-weight:700;font-size:11px">${w.waybill_number}</td>
+      <td style="font-size:11px">${w.orders?.order_number || '—'}</td>
+      <td>${w.logistics_companies?.name || '—'}</td>
+      <td style="font-family:'Courier New',monospace">${w.vehicles?.plate || '—'}</td>
+      <td>${w.drivers?.name || '—'}</td>
+      <td style="font-size:11px">${fmtDate(w.loading_date)}</td>
+      <td>${statusTag(w.status)}</td>
+      <td>
+        ${w.file_url
+          ? `<a href="${w.file_url}" target="_blank" class="btn btn-ghost btn-sm"><i class="fas fa-file-pdf"></i>Görüntüle</a>`
+          : `<button class="btn btn-ghost btn-sm" onclick="generateWaybillPDF('${w.id}')"><i class="fas fa-file-pdf"></i>PDF</button>`}
+      </td>
+    </tr>`).join('')
+    : '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--muted)">İrsaliye bulunamadı</td></tr>';
+}
+
+window.openWaybillModal = async function() {
+  q('waybillModalAlert').innerHTML = '';
+  q('wbDate').value = new Date().toISOString().split('T')[0];
+  const { data: ords } = await sb.from('orders').select('id,order_number').order('created_at', { ascending: false }).limit(30);
+  const sel = q('wbOrderId');
+  sel.innerHTML = '<option value="">— Sipariş seçin —</option>';
+  (ords || []).forEach(o => sel.innerHTML += `<option value="${o.id}">${o.order_number || o.id.slice(0,8)}</option>`);
+  const sel2 = q('wbCompany');
+  sel2.innerHTML = '<option value="">— Nakliyeci seçin —</option>';
+  logisticsCompanies.forEach(lc => sel2.innerHTML += `<option value="${lc.id}">${lc.name}</option>`);
+  q('waybillModal').classList.add('open');
+};
+
+window.saveWaybill = async function() {
+  const { error } = await sb.from('waybills').insert({
+    waybill_number: q('wbNumber').value || `IRS-${Date.now()}`,
+    order_id: q('wbOrderId').value || null,
+    logistics_company_id: q('wbCompany').value || null,
+    loading_date: q('wbDate').value,
+    loading_address: q('wbLoadAddr').value,
+    delivery_address: q('wbDelivAddr').value,
+    goods_description: q('wbGoods').value,
+    freight_cost: parseFloat(q('wbFreight').value) || 0,
+    seller_id: currentUser.id, status: 'issued',
+  });
+  if (error) {
+    q('waybillModalAlert').innerHTML = `<div class="alert alert-error"><i class="fas fa-exclamation-circle"></i>${error.message}</div>`;
+  } else {
+    toast('İrsaliye kaydedildi');
+    closeModal('waybillModal');
+    loadLogistics();
+  }
+};
+
+window.generateWaybillPDF = function(id) {
+  if (!window.jspdf) { toast('PDF oluşturuluyor...', 'info'); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  doc.setFontSize(16); doc.text('DampingVar - İrsaliye', 20, 20);
+  doc.setFontSize(11); doc.text(`İrsaliye No: ${id.slice(0,8)}`, 20, 35);
+  doc.save(`irsaliye-${id.slice(0,8)}.pdf`);
+  toast('PDF indirildi');
+};
+
+// ─── ACCOUNTING ───────────────────────────────────────────────────
+async function loadAccounting() {
+  const { data: comms } = await sb.from('commissions')
+    .select('*, orders(order_number,total_amount), profiles:seller_id(full_name,company_name), invoices(id,invoice_number)')
+    .order('created_at', { ascending: false }).limit(50);
+  const data = comms || [];
+
+  const totGross = data.reduce((s, c) => s + (c.gross_amount || 0), 0);
+  const totPlat = data.reduce((s, c) => s + (c.platform_fee || 0), 0);
+  const totPayout = data.reduce((s, c) => s + (c.seller_payout || 0), 0);
+  const totPending = data.filter(c => c.status === 'pending').reduce((s, c) => s + (c.gross_amount || 0), 0);
+
+  q('accountingStats').innerHTML = [
+    { label: 'Toplam Hacim', value: fmt(totGross), color: '#D4AF37', icon: 'fa-chart-bar' },
+    { label: 'Platform Kom.', value: fmt(totPlat), color: '#10B981', icon: 'fa-coins' },
+    { label: 'Net Satıcı', value: fmt(totPayout), color: '#38BDF8', icon: 'fa-money-bill' },
+    { label: 'Bekleyen', value: fmt(totPending), color: '#F59E0B', icon: 'fa-clock' },
+  ].map(c => `<div class="stat-card"><div class="stat-icon" style="background:${c.color}15;color:${c.color}"><i class="fas ${c.icon}"></i></div>
+    <div><div class="stat-label">${c.label.toUpperCase()}</div><div class="stat-value">${c.value}</div></div></div>`).join('');
+
+  q('accountingTable').innerHTML = data.length ? data.map(c => `
+    <tr>
+      <td style="font-family:'Courier New',monospace;font-size:11px">${c.orders?.order_number || '—'}</td>
+      <td style="font-family:'Courier New',monospace;font-weight:900;color:var(--gold)">${fmt(c.gross_amount)}</td>
+      <td style="color:var(--green);font-family:'Courier New',monospace">%10 — ${fmt(c.platform_fee)}</td>
+      <td style="color:var(--blue);font-family:'Courier New',monospace">%2 — ${fmt(c.influencer_fee || 0)}</td>
+      <td style="color:var(--text);font-family:'Courier New',monospace;font-weight:700">${fmt(c.seller_payout)}</td>
+      <td style="font-size:11px">${c.invoices?.invoice_number || '—'}</td>
+      <td>${statusTag(c.status)}</td>
+      <td>
+        ${c.status === 'pending'
+          ? `<button class="btn btn-green btn-sm" onclick="approveCommission('${c.id}','${c.order_id}')"><i class="fas fa-check"></i>Onayla & Escrow Serbest</button>`
+          : '—'}
+      </td>
+    </tr>`).join('')
+    : '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--muted)">Muhasebe kaydı yok</td></tr>';
+}
+
+window.approveCommission = async function(commId, orderId) {
+  if (!confirm('Fatura onaylanacak ve escrow serbest bırakılacak. Devam?')) return;
+  // Komisyonu onayla
+  await sb.from('commissions').update({ status: 'released', paid_at: new Date().toISOString() }).eq('id', commId);
+  // Escrow'u serbest bırak
+  await sb.from('escrow_wallets').update({ status: 'released', released_at: new Date().toISOString() }).eq('order_id', orderId);
+  // Sipariş güncelle
+  await sb.from('orders').update({ escrow_status: 'released', order_status: 'DELIVERED' }).eq('id', orderId);
+  toast('Fatura onaylandı, escrow serbest bırakıldı!');
+  loadAccounting();
+};
+
+// ─── FINANCE ──────────────────────────────────────────────────────
+async function loadFinance() {
+  const [{ data: escrows }, { data: payments }] = await Promise.all([
+    sb.from('escrow_wallets').select('*, orders(order_number), profiles:buyer_id(full_name,company_name)').order('created_at', { ascending: false }).limit(30),
+    sb.from('payments').select('*, orders(order_number)').order('created_at', { ascending: false }).limit(30),
+  ]);
+
+  const esc = escrows || [];
+  const pay = payments || [];
+
+  const totEsc = esc.filter(e => e.status === 'pending').reduce((s, e) => s + (e.amount || 0), 0);
+  const totRel = esc.filter(e => e.status === 'released').reduce((s, e) => s + (e.amount || 0), 0);
+  const totPay = pay.filter(p => p.payment_status === 'CONFIRMED').reduce((s, p) => s + (p.amount || 0), 0);
+  const totPend = pay.filter(p => p.payment_status === 'PENDING').reduce((s, p) => s + (p.amount || 0), 0);
+
+  q('financeStats').innerHTML = [
+    { label: 'Bekleyen Escrow', value: fmt(totEsc), color: '#F59E0B', icon: 'fa-lock' },
+    { label: 'Serbest Escrow', value: fmt(totRel), color: '#10B981', icon: 'fa-lock-open' },
+    { label: 'Onaylı Ödeme', value: fmt(totPay), color: '#D4AF37', icon: 'fa-check-circle' },
+    { label: 'Bekleyen Ödeme', value: fmt(totPend), color: '#38BDF8', icon: 'fa-clock' },
+  ].map(c => `<div class="stat-card"><div class="stat-icon" style="background:${c.color}15;color:${c.color}"><i class="fas ${c.icon}"></i></div>
+    <div><div class="stat-label">${c.label.toUpperCase()}</div><div class="stat-value">${c.value}</div></div></div>`).join('');
+
+  q('escrowTable').innerHTML = esc.length ? esc.map(e => `
+    <tr>
+      <td style="font-family:'Courier New',monospace;font-size:11px">${e.orders?.order_number || e.order_id?.slice(0,8)}</td>
+      <td>${e.profiles?.full_name || e.profiles?.company_name || '—'}</td>
+      <td style="font-family:'Courier New',monospace;font-weight:900;color:var(--gold)">${fmt(e.amount)}</td>
+      <td>${statusTag(e.status)}</td>
+      <td>
+        ${e.status === 'pending'
+          ? `<div style="display:flex;gap:4px">
+              <button class="btn btn-green btn-sm" onclick="releaseEscrow('${e.id}','${e.order_id}')"><i class="fas fa-unlock"></i>Serbest</button>
+              <button class="btn btn-red btn-sm" onclick="refundEscrow('${e.id}','${e.order_id}')"><i class="fas fa-undo"></i>İade</button>
+             </div>`
+          : '—'}
+      </td>
+    </tr>`).join('')
+    : '<tr><td colspan="5" style="text-align:center;padding:16px;color:var(--muted)">Escrow yok</td></tr>';
+
+  q('paymentsTable').innerHTML = pay.length ? pay.map(p => `
+    <tr>
+      <td style="font-family:'Courier New',monospace;font-size:11px">${p.orders?.order_number || p.order_id?.slice(0,8)}</td>
+      <td style="font-family:'Courier New',monospace;font-weight:900;color:var(--gold)">${fmt(p.amount)}</td>
+      <td><span class="tag tag-blue">${p.payment_method || 'Banka'}</span></td>
+      <td>${statusTag(p.payment_status)}</td>
+      <td>
+        ${p.payment_status === 'PENDING'
+          ? `<div style="display:flex;gap:4px">
+              <button class="btn btn-green btn-sm" onclick="confirmPayment('${p.id}','${p.order_id}')"><i class="fas fa-check"></i>Onayla</button>
+              <button class="btn btn-red btn-sm" onclick="cancelPayment('${p.id}','${p.order_id}')"><i class="fas fa-times"></i>İptal</button>
+             </div>`
+          : '—'}
+      </td>
+    </tr>`).join('')
+    : '<tr><td colspan="5" style="text-align:center;padding:16px;color:var(--muted)">Ödeme yok</td></tr>';
+}
+
+// Sipariş listesinden doğrudan "Ödeme Onayla" — Ödeme Bekliyor → Hazırlanıyor
+// Ayrıca escrow_wallets satırı yoksa oluşturur (status: pending)
+window.approveOrderPayment = async function(orderId) {
+  if (!confirm('Ödeme onaylanacak, sipariş "Hazırlanıyor" durumuna geçecek ve escrow bloke edilecek. Devam?')) return;
+  const o = allOrders.find(x => x.id === orderId);
+  if (!o) return;
+
+  // payments kaydı varsa onu da senkron güncelle
+  await sb.from('payments').update({ payment_status: 'CONFIRMED', confirmed_by: currentUser.id, payment_date: new Date().toISOString() }).eq('order_id', orderId);
+
+  await sb.from('orders').update({
+    payment_status: 'CONFIRMED', order_status: 'PROCESSING', escrow_status: 'pending',
+  }).eq('id', orderId);
+
+  // escrow_wallets satırı yoksa oluştur, varsa pending'e çek
+  const { data: existingEscrow } = await sb.from('escrow_wallets').select('id').eq('order_id', orderId).maybeSingle();
+  if (existingEscrow) {
+    await sb.from('escrow_wallets').update({ status: 'pending' }).eq('id', existingEscrow.id);
+  } else {
+    await sb.from('escrow_wallets').insert({
+      order_id: orderId, buyer_id: o.buyer_id, seller_id: o.seller_id,
+      amount: o.total_amount, status: 'pending',
+    });
+  }
+
+  toast('Ödeme onaylandı, sipariş Hazırlanıyor durumuna geçti!');
+  loadOrders();
+};
+
+// Alıcı "Teslim Aldım" onayı — escrow'u hemen serbest bırakır (7 gün beklemeden)
+window.confirmDeliveryByBuyer = async function(orderId) {
+  if (!confirm('Ürünü teslim aldığınızı onaylıyor musunuz? Bu işlem satıcıya ödemeyi serbest bırakır ve geri alınamaz.')) return;
+
+  await sb.from('escrow_wallets').update({ status: 'released', released_at: new Date().toISOString() }).eq('order_id', orderId).eq('status', 'pending');
+
+  await sb.from('orders').update({
+    order_status: 'DELIVERED', shipping_status: 'DELIVERED', escrow_status: 'released',
+    buyer_delivery_confirmed: true, buyer_delivery_confirmed_at: new Date().toISOString(),
+  }).eq('id', orderId);
+
+  toast('Teslimat onaylandı, ödeme satıcıya serbest bırakıldı!');
+  loadOrders();
+};
+
+window.confirmPayment = async function(payId, orderId) {
+  if (!confirm('Ödeme onaylanacak ve escrow bloke konacak. Devam?')) return;
+  await sb.from('payments').update({ payment_status: 'CONFIRMED', confirmed_by: currentUser.id, payment_date: new Date().toISOString() }).eq('id', payId);
+  await sb.from('orders').update({ payment_status: 'CONFIRMED', order_status: 'PROCESSING', escrow_status: 'pending' }).eq('id', orderId);
+  await sb.from('escrow_wallets').update({ status: 'pending' }).eq('order_id', orderId);
+  toast('Ödeme onaylandı, escrow bloke edildi!');
+  loadFinance();
+};
+
+window.cancelPayment = async function(payId, orderId) {
+  if (!confirm('Ödeme iptal edilecek. Devam?')) return;
+  await sb.from('payments').update({ payment_status: 'CANCELLED' }).eq('id', payId);
+  await sb.from('orders').update({ payment_status: 'CANCELLED', order_status: 'CANCELLED' }).eq('id', orderId);
+  toast('Ödeme iptal edildi', 'error');
+  loadFinance();
+};
+
+// ─── Trade Signals — Abonelik Ödemeleri (Admin onayı) ─────────────
+async function loadTradeSubs() {
+  const { data: payments, error } = await sb
+    .from('trade_payments')
+    .select('*, profiles:user_id(full_name, email, company_name)')
+    .order('created_at', { ascending: false })
+    .limit(100);
+
+  if (error) {
+    q('tradeSubsTable').innerHTML = `<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--red)">Tablo bulunamadı veya erişim hatası: ${error.message}</td></tr>`;
+    q('tradeSubsStats').innerHTML = '';
+    return;
+  }
+
+  const pay = payments || [];
+  const pendingCount  = pay.filter(p => p.status === 'pending').length;
+  const confirmedSum  = pay.filter(p => p.status === 'confirmed').reduce((s, p) => s + (Number(p.amount_usdt) || 0), 0);
+  const pendingSum    = pay.filter(p => p.status === 'pending').reduce((s, p) => s + (Number(p.amount_usdt) || 0), 0);
+  const failedCount   = pay.filter(p => p.status === 'failed').length;
+
+  q('tradeSubsStats').innerHTML = [
+    { label: 'Bekleyen Onay', value: pendingCount, color: '#F59E0B', icon: 'fa-clock' },
+    { label: 'Bekleyen Tutar', value: `$${pendingSum.toFixed(2)}`, color: '#F59E0B', icon: 'fa-hourglass-half' },
+    { label: 'Onaylı Toplam', value: `$${confirmedSum.toFixed(2)}`, color: '#10B981', icon: 'fa-check-circle' },
+    { label: 'Reddedilen', value: failedCount, color: '#EF4444', icon: 'fa-times-circle' },
+  ].map(c => `<div class="stat-card"><div class="stat-icon" style="background:${c.color}15;color:${c.color}"><i class="fas ${c.icon}"></i></div>
+    <div><div class="stat-label">${c.label.toUpperCase()}</div><div class="stat-value">${c.value}</div></div></div>`).join('');
+
+  const statusTagMap = {
+    pending:   '<span class="tag tag-amber"><i class="fas fa-clock"></i> Bekliyor</span>',
+    confirmed: '<span class="tag tag-green"><i class="fas fa-check"></i> Onaylandı</span>',
+    failed:    '<span class="tag tag-red"><i class="fas fa-times"></i> Reddedildi</span>',
+  };
+
+  q('tradeSubsTable').innerHTML = pay.length ? pay.map(p => {
+    const name = p.profiles?.full_name || p.profiles?.company_name || '—';
+    const email = p.profiles?.email || '';
+    const txShort = p.tx_hash ? `${p.tx_hash.slice(0,10)}…${p.tx_hash.slice(-8)}` : '—';
+    const planColor = p.plan === 'VIP' ? '#D4AF37' : '#38BDF8';
+    return `
+    <tr>
+      <td>
+        <div style="font-weight:700;font-size:12px">${name}</div>
+        <div style="font-size:10px;color:var(--muted);font-family:'Courier New',monospace">${email}</div>
+      </td>
+      <td><span style="color:${planColor};font-family:'Courier New',monospace;font-weight:900;font-size:12px">${p.plan}</span></td>
+      <td style="font-family:'Courier New',monospace;font-weight:900;color:var(--gold)">$${Number(p.amount_usdt || 0).toFixed(2)}</td>
+      <td>${p.memo ? `<span style="background:rgba(212,175,55,.1);color:var(--gold);border:1px solid rgba(212,175,55,.3);border-radius:6px;padding:2px 8px;font-family:'Courier New',monospace;font-weight:900;font-size:12px;letter-spacing:2px">${p.memo}</span>` : '—'}</td>
+      <td style="font-family:'Courier New',monospace;font-size:10px;color:var(--muted2)" title="${p.tx_hash || ''}">${txShort}</td>
+      <td>${statusTagMap[p.status] || p.status}</td>
+      <td style="font-family:'Courier New',monospace;font-size:10px;color:var(--muted)">${new Date(p.created_at).toLocaleString('tr-TR',{dateStyle:'short',timeStyle:'short'})}</td>
+      <td>
+        ${p.status === 'pending'
+          ? `<div style="display:flex;gap:4px">
+               <button class="btn btn-green btn-sm" onclick="confirmTradeSub('${p.id}','${p.user_id}','${p.plan}')"><i class="fas fa-check"></i>Onayla</button>
+               <button class="btn btn-red btn-sm" onclick="rejectTradeSub('${p.id}')"><i class="fas fa-times"></i>Reddet</button>
+             </div>`
+          : (p.status === 'confirmed' && p.confirmed_at
+              ? `<span style="font-size:10px;color:var(--muted);font-family:'Courier New',monospace">${new Date(p.confirmed_at).toLocaleString('tr-TR',{dateStyle:'short',timeStyle:'short'})}</span>`
+              : '—')
+        }
+      </td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="8" style="text-align:center;padding:16px;color:var(--muted)">Henüz ödeme bildirimi yok</td></tr>';
+}
+
+// Tek tıkla onay: ödeme confirmed yapılır + abonelik 30 gün aktif edilir
+window.confirmTradeSub = async function(paymentId, userId, plan) {
+  if (!confirm(`Bu ödeme onaylanacak ve kullanıcının ${plan} planı 30 gün aktif edilecek. Devam?`)) return;
+
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+  // 1) Ödemeyi onayla
+  const { error: payErr } = await sb.from('trade_payments')
+    .update({
+      status: 'confirmed',
+      confirmed_at: new Date().toISOString(),
+      confirmed_by: currentUser?.id || null,
+    })
+    .eq('id', paymentId);
+
+  if (payErr) { toast('Ödeme onaylanamadı: ' + payErr.message, 'error'); return; }
+
+  // 2) Aboneliği upsert et (varsa güncelle, yoksa oluştur)
+  const { error: subErr } = await sb.from('trade_subscriptions')
+    .upsert({
+      user_id: userId,
+      plan: plan,
+      status: 'active',
+      expires_at: expiresAt,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'user_id' });
+
+  if (subErr) { toast('Abonelik güncellenemedi: ' + subErr.message, 'error'); return; }
+
+  // 3) Kullanıcıya bildirim gönder (notifications tablosu varsa)
+  try {
+    await sb.from('notifications').insert({
+      user_id: userId,
+      title: 'Aboneliğiniz Aktif!',
+      message: `${plan} planınız onaylandı ve 30 gün boyunca aktif.`,
+      type: 'success',
+    });
+  } catch (e) { /* notifications tablosu yoksa sessiz geç */ }
+
+  toast(`${plan} aboneliği onaylandı ve aktif edildi!`);
+  loadTradeSubs();
+  refreshTradeSubsBadge();
+};
+
+window.rejectTradeSub = async function(paymentId) {
+  if (!confirm('Bu ödeme reddedilecek. Devam?')) return;
+  const { error } = await sb.from('trade_payments')
+    .update({ status: 'failed' })
+    .eq('id', paymentId);
+  if (error) { toast('İşlem başarısız: ' + error.message, 'error'); return; }
+  toast('Ödeme reddedildi', 'error');
+  loadTradeSubs();
+  refreshTradeSubsBadge();
+};
+
+window.releaseEscrow = async function(escId, orderId) {
+  if (!confirm('Escrow serbest bırakılacak. Satıcıya ödeme yapılacak. Devam?')) return;
+  await sb.from('escrow_wallets').update({ status: 'released', released_at: new Date().toISOString() }).eq('id', escId);
+  await sb.from('orders').update({ escrow_status: 'released', order_status: 'DELIVERED' }).eq('id', orderId);
+  await sb.from('commissions').update({ status: 'released' }).eq('order_id', orderId);
+  toast('Escrow serbest bırakıldı, komisyon dağıtıldı!');
+  loadFinance();
+};
+
+window.refundEscrow = async function(escId, orderId) {
+  if (!confirm('Escrow iade edilecek. Alıcıya geri ödeme yapılacak. Devam?')) return;
+  await sb.from('escrow_wallets').update({ status: 'refunded' }).eq('id', escId);
+  await sb.from('orders').update({ escrow_status: 'refunded', order_status: 'CANCELLED' }).eq('id', orderId);
+  toast('Escrow iade edildi', 'info');
+  loadFinance();
+};
+
+// ─── PROFILE ──────────────────────────────────────────────────────
+function renderProfile() {
+  const p = currentProfile || {};
+  q('profileForm').innerHTML = `
+    <div class="form-group"><label class="form-label">AD SOYAD</label><input class="form-control" id="pfName" value="${p.full_name || ''}"></div>
+    <div class="form-group"><label class="form-label">FİRMA ADI</label><input class="form-control" id="pfCompany" value="${p.company_name || ''}"></div>
+    <div class="form-group"><label class="form-label">TELEFON</label><input class="form-control" id="pfPhone" value="${p.phone || ''}"></div>
+    <div class="form-group"><label class="form-label">ADRES</label><textarea class="form-control" id="pfAddress">${p.address || ''}</textarea></div>
+    <div class="form-group"><label class="form-label">VERGİ NO</label><input class="form-control" id="pfTax" value="${p.tax_number || ''}"></div>
+    <div class="form-group"><label class="form-label">VERGİ DAİRESİ</label><input class="form-control" id="pfTaxOffice" value="${p.tax_office || ''}"></div>
+    <div class="form-group"><label class="form-label">IBAN</label><input class="form-control" id="pfIban" value="${p.iban || ''}"></div>`;
+
+  const roleColors = { customer: '#38BDF8', dealer: '#10B981', admin: '#D4AF37', logistics: '#A78BFA', finance: '#F59E0B', supplier: '#F97316', franchise: '#EC4899' };
+  const roleTr = { customer: 'Müşteri', dealer: 'Bayi', admin: 'Yönetici', logistics: 'Lojistik', finance: 'Finans', influencer: 'Influencer', supplier: 'Tedarikçi', franchise: 'Franchise' };
+  q('profileStats').innerHTML = `
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+      <div class="avatar" style="width:56px;height:56px;font-size:22px">${(p.full_name || 'U').charAt(0)}</div>
+      <div>
+        <div style="font-size:16px;font-weight:800">${p.full_name || p.company_name || '—'}</div>
+        <div style="margin-top:4px"><span class="role-chip" style="background:${(roleColors[p.role]||'#5E7090')}20;color:${roleColors[p.role]||'#5E7090'};border:1px solid ${(roleColors[p.role]||'#5E7090')}40">${roleTr[p.role] || p.role}</span></div>
+      </div>
+    </div>
+    <div class="divider"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="card-sm"><div class="stat-label">BAKİYE</div><div style="font-size:18px;font-weight:900;font-family:'Courier New',monospace;color:var(--gold)">${fmt(p.balance)}</div></div>
+      <div class="card-sm"><div class="stat-label">PUAN</div><div style="font-size:18px;font-weight:900;font-family:'Courier New',monospace;color:var(--blue)">⭐ ${(p.rating||0).toFixed(1)}</div></div>
+    </div>
+    <div class="divider"></div>
+    <div style="font-size:11px;font-family:'Courier New',monospace;color:var(--muted)">
+      <div>Referans Kodu: <span style="color:var(--gold);font-weight:700">${p.referral_code || '—'}</span></div>
+      <div style="margin-top:4px">Kayıt: <span style="color:var(--text)">${fmtDate(p.created_at)}</span></div>
+      <div style="margin-top:4px">E-posta: <span style="color:var(--text)">${p.email || currentUser?.email || '—'}</span></div>
+    </div>`;
+}
+
+window.saveProfile = async function() {
+  const { error } = await sb.from('profiles').update({
+    full_name: q('pfName').value, company_name: q('pfCompany').value,
+    phone: q('pfPhone').value, address: q('pfAddress').value,
+    tax_number: q('pfTax').value, tax_office: q('pfTaxOffice').value,
+    iban: q('pfIban').value, updated_at: new Date().toISOString(),
+  }).eq('id', currentUser.id);
+  if (error) { toast(error.message, 'error'); }
+  else {
+    toast('Profil güncellendi');
+    const { data } = await sb.from('profiles').select('*').eq('id', currentUser.id).single();
+    currentProfile = data;
+    q('topbarName').textContent = data?.full_name || data?.company_name || '—';
+    renderProfile();
+  }
+};
+
+// ─── MODAL UTILS ──────────────────────────────────────────────────
+window.closeModal = function(id) { q(id).classList.remove('open'); };
+window.onFileSelect = function(inputId, labelId) {
+  const file = q(inputId).files[0];
+  if (file) q(labelId).textContent = file.name;
+};
+
+// ─── INIT ─────────────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>

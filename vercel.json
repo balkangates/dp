@@ -1,0 +1,34 @@
+{
+  "buildCommand": "vite build",
+  "outputDirectory": "dist",
+  "routes": [
+    {
+      "src": "/dashboard.html",
+      "dest": "/dashboard.html"
+    },
+    {
+      "src": "/login.html",
+      "dest": "/login.html"
+    },
+    {
+      "src": "/reset-password.html",
+      "dest": "/reset-password.html"
+    },
+    {
+      "src": "/payment-success.html",
+      "dest": "/payment-success.html"
+    },
+    {
+      "src": "/chat-widget.html",
+      "dest": "/chat-widget.html"
+    },
+    {
+      "src": "/modules/(.*)",
+      "dest": "/modules/$1"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
+    }
+  ]
+}

@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Giriş / Kayıt - DampingVar.com</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+  <style>*{font-family:'Inter',sans-serif;}</style>
+</head>
+<body class="bg-gray-950 text-white flex items-center justify-center min-h-screen">
+  <div class="w-full max-w-md p-8 bg-gray-900/80 rounded-2xl border border-gray-700 shadow-2xl">
+    <div class="text-center mb-6">
+      <i class="fas fa-chart-line text-green-500 text-3xl"></i>
+      <h1 class="text-2xl font-bold mt-2">DampingVar.com</h1>
+      <p class="text-gray-400 text-sm">B2B Toptan Ticaret Platformu</p>
+    </div>
+    <div id="tabs" class="flex gap-2 mb-6">
+      <button id="loginTab" class="flex-1 py-2 rounded-lg bg-blue-600">Giriş Yap</button>
+      <button id="registerTab" class="flex-1 py-2 rounded-lg bg-gray-700">Kayıt Ol</button>
+    </div>
+    <div id="loginForm" class="space-y-4">
+      <input type="email" id="loginEmail" placeholder="E-posta" class="w-full p-3 rounded-lg bg-gray-800 border border-gray-700">
+      <input type="password" id="loginPassword" placeholder="Şifre" class="w-full p-3 rounded-lg bg-gray-800 border border-gray-700">
+      <button id="doLogin" class="w-full bg-blue-600 py-3 rounded-lg font-semibold">Giriş Yap</button>
+      <p class="text-right"><a href="/reset-password.html" class="text-blue-400 text-sm">Şifremi unuttum?</a></p>
+    </div>
+    <div id="registerForm" class="space-y-4 hidden">
+      <input type="text" id="regFullName" placeholder="Ad Soyad" class="w-full p-3 rounded-lg bg-gray-800 border border-gray-700">
+      <input type="email" id="regEmail" placeholder="E-posta" class="w-full p-3 rounded-lg bg-gray-800 border border-gray-700">
+      <input type="password" id="regPassword" placeholder="Şifre (min 6 karakter)" class="w-full p-3 rounded-lg bg-gray-800 border border-gray-700">
+      <select id="regRole" class="w-full p-3 rounded-lg bg-gray-800 border border-gray-700">
+        <option value="customer">Alıcı/Müşteri (Customer)</option>
+        <option value="dealer">Satıcı/Bayi (Dealer)</option>
+	<option value="supplier">Tedarikçi (Supplier)</option>
+	<option value="locistic">Kargo (Logistic)</option>
+        <option value="influencer">Influencer</option>
+      </select>
+      <button id="doRegister" class="w-full bg-green-600 py-3 rounded-lg font-semibold">Kayıt Ol</button>
+    </div>
+    <div id="message" class="mt-4 text-center text-sm"></div>
+  </div>
+
+  <script type="module">
+    import { supabase } from './assets/js/supabaseClient.js';
+
+    const loginTab = document.getElementById('loginTab');
+    const registerTab = document.getElementById('registerTab');
+    const loginForm = document.getElementById('loginForm');
+    const registerForm = document.getElementById('registerForm');
+    const msgDiv = document.getElementById('message');
+
+    // Tab switching
+    loginTab.addEventListener('click', () => {
+      loginTab.classList.add('bg-blue-600'); loginTab.classList.remove('bg-gray-700');
+      registerTab.classList.add('bg-gray-700'); registerTab.classList.remove('bg-blue-600');
+      loginForm.classList.remove('hidden'); registerForm.classList.add('hidden');
+      msgDiv.innerText = '';
+    });
+    registerTab.addEventListener('click', () => {
+      registerTab.classList.add('bg-blue-600'); registerTab.classList.remove('bg-gray-700');
+      loginTab.classList.add('bg-gray-700'); loginTab.classList.remove('bg-blue-600');
+      registerForm.classList.remove('hidden'); loginForm.classList.add('hidden');
+      msgDiv.innerText = '';
+    });
+
+    // LOGIN
+    document.getElementById('doLogin').addEventListener('click', async () => {
+      const email = document.getElementById('loginEmail').value;
+      const password = document.getElementById('loginPassword').value;
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) msgDiv.innerText = 'Hata: ' + error.message;
+      else window.location.href = '/dashboard.html';
+    });
+
+    // Helper: Benzersiz referral kodu oluştur (örnek: INF + rastgele 6 karakter)
+    function generateReferralCode() {
+      return 'INF' + Math.random().toString(36).substring(2, 8).toUpperCase();
+    }
+
+    // REGISTER (Influencer referral destekli)
+    document.getElementById('doRegister').addEventListener('click', async () => {
+      const fullName = document.getElementById('regFullName').value.trim();
+      const email = document.getElementById('regEmail').value.trim();
+      const password = document.getElementById('regPassword').value;
+      const role = document.getElementById('regRole').value;
+
+      if (!fullName || !email || !password) {
+        msgDiv.innerText = 'Lütfen tüm alanları doldurun.';
+        return;
+      }
+      if (password.length < 6) {
+        msgDiv.innerText = 'Şifre en az 6 karakter olmalıdır.';
+        return;
+      }
+
+      // URL'den ref parametresini al (örnek: ?ref=INF123)
+      const urlParams = new URLSearchParams(window.location.search);
+      const referralCode = urlParams.get('ref');
+      let referredById = null;
+
+      if (referralCode && role === 'dealer') {
+        // Sadece satıcı kaydında referans aranır (influencer kendi linkiyle satıcı getirir)
+        const { data: influencer, error: refError } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('referral_code', referralCode)
+          .maybeSingle(); // .single() yerine .maybeSingle() hata vermez
+        if (refError) console.error('Referans sorgu hatası:', refError);
+        if (influencer) referredById = influencer.id;
+        else console.warn('Geçersiz referral kodu:', referralCode);
+      }
+
+      // 1) Auth kaydı (metadata'ya referred_by eklenir)
+      const { data: authData, error: signUpError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            full_name: fullName,
+            role: role,
+            referred_by: referredById
+          }
+        }
+      });
+
+      if (signUpError) {
+        msgDiv.innerText = 'Kayıt hatası: ' + signUpError.message;
+        return;
+      }
+
+      const userId = authData.user?.id;
+      if (!userId) {
+        msgDiv.innerText = 'Kullanıcı oluşturulamadı.';
+        return;
+      }
+
+      // 2) profiles tablosuna kayıt
+      const profileData = {
+        id: userId,
+        full_name: fullName,
+        role: role,
+        referred_by: referredById
+      };
+
+      // Eğer influencer ise, benzersiz referral_code oluştur
+      if (role === 'influencer') {
+        let unique = false;
+        let newCode = '';
+        while (!unique) {
+          newCode = generateReferralCode();
+          const { data: existing } = await supabase
+            .from('profiles')
+            .select('referral_code')
+            .eq('referral_code', newCode)
+            .maybeSingle();
+          if (!existing) unique = true;
+        }
+        profileData.referral_code = newCode;
+      }
+
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .upsert(profileData);
+
+      if (profileError) {
+        console.error('Profil kayıt hatası:', profileError);
+        msgDiv.innerText = 'Profil oluşturulamadı, lütfen destek ekibiyle iletişime geçin.';
+        return;
+      }
+
+      // Başarılı mesajı
+      if (role === 'influencer') {
+        msgDiv.innerHTML = `Kayıt başarılı! Referans kodunuz: <strong>${profileData.referral_code}</strong><br>Bu kodu paylaşarak satıcı getirin ve komisyon kazanın.`;
+      } else if (referredById) {
+        msgDiv.innerHTML = 'Kayıt başarılı! Referans ile kayıt oldunuz. Lütfen e-postanızı doğrulayın.';
+      } else {
+        msgDiv.innerText = 'Kayıt başarılı! Lütfen e-postanızı doğrulayın.';
+      }
+
+      // 3 saniye sonra giriş sayfasına yönlendir (opsiyonel)
+      setTimeout(() => {
+        if (confirm('E-posta doğrulama bağlantısı gönderildi. Şimdi giriş yapmak ister misiniz?')) {
+          window.location.href = '/login.html';
+        }
+      }, 2000);
+    });
+  </script>
+</body>
+</html>

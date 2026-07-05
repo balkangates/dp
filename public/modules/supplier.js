@@ -268,6 +268,38 @@ async function renderShortfallsTab(container, ctx) {
   </table></div>`;
 }
 
+// ═══ MODÜL 9 — TEDARİKÇİ ÖZET İSTATİSTİKLERİ ═══════════════════════════
+async function fetchSupplierStats() {
+  const totalProducts = myCatalogProducts.length;
+  const approved = myCatalogProducts.filter(p => p.is_approved).length;
+  const pending = totalProducts - approved;
+
+  // Gelen sipariş + ciro: bu tedarikçinin ürünlerini içeren store_order_items
+  const catalogIds = myCatalogProducts.map(p => p.id);
+  let incomingOrders = 0, revenue = 0;
+  if (catalogIds.length > 0) {
+    const { data: storeProductRows } = await sb.from('store_products').select('id').in('catalog_product_id', catalogIds);
+    const storeProductIds = (storeProductRows || []).map(r => r.id);
+    if (storeProductIds.length > 0) {
+      const { data: items } = await sb.from('store_order_items').select('total_price').in('store_product_id', storeProductIds);
+      incomingOrders = (items || []).length;
+      revenue = (items || []).reduce((s, i) => s + Number(i.total_price || 0), 0);
+    }
+  }
+  return { totalProducts, approved, pending, incomingOrders, revenue };
+}
+
+function renderSupplierStatsBar(stats) {
+  return `
+    <div class="grid-4" style="margin-bottom:16px">
+      <div class="stat-card"><div class="stat-icon" style="background:rgba(56,189,248,.15);color:var(--blue)"><i class="fas fa-boxes"></i></div><div><div class="stat-label">TOPLAM ÜRÜN</div><div class="stat-value">${stats.totalProducts}</div></div></div>
+      <div class="stat-card"><div class="stat-icon" style="background:rgba(16,185,129,.15);color:var(--green)"><i class="fas fa-circle-check"></i></div><div><div class="stat-label">ONAYLI</div><div class="stat-value">${stats.approved}</div></div></div>
+      <div class="stat-card"><div class="stat-icon" style="background:rgba(245,158,11,.15);color:var(--amber, #F59E0B)"><i class="fas fa-hourglass-half"></i></div><div><div class="stat-label">ONAY BEKLEYEN</div><div class="stat-value">${stats.pending}</div></div></div>
+      <div class="stat-card"><div class="stat-icon" style="background:rgba(212,175,55,.15);color:var(--gold)"><i class="fas fa-sack-dollar"></i></div><div><div class="stat-label">GELEN SİPARİŞ / CİRO</div><div class="stat-value" style="font-size:14px">${stats.incomingOrders} / ₺${stats.revenue.toLocaleString('tr-TR')}</div></div></div>
+    </div>
+  `;
+}
+
 async function render(container, ctx) {
   const tabs = [
     { id: 'auctions', label: 'Gelen Talepler', icon: 'fa-bullhorn' },
@@ -277,11 +309,13 @@ async function render(container, ctx) {
     { id: 'propose', label: 'Yeni Ürün Öner', icon: 'fa-plus' },
     { id: 'shortfalls', label: 'Eksik Siparişler', icon: 'fa-triangle-exclamation' },
   ];
+  const stats = await fetchSupplierStats();
 
   container.innerHTML = `
     <div class="section-head">
       <div class="section-title"><i class="fas fa-industry" style="color:var(--gold)"></i>Tedarikçi Paneli</div>
     </div>
+    ${renderSupplierStatsBar(stats)}
     <div class="pill-tabs" id="supTabs">
       ${tabs.map(t => `<div class="pill-tab ${t.id === activeTab ? 'active' : ''}" data-tab="${t.id}"><i class="fas ${t.icon}"></i> ${t.label}</div>`).join('')}
     </div>

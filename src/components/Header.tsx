@@ -9,10 +9,14 @@ import AuthModal from './AuthModal';
 // Karşılığı olmayan roller (customer/dealer/logistics/finance) henüz
 // React tarafında panele sahip değil; onlar için MEVCUT davranış korunuyor
 // (dashboard.html'e yönlendirme) — bu, "çalışan sistemi kırma" kuralı gereği.
+// DÜZELTME: 'supplier' ve 'franchise' buradan ÇIKARILDI. Gerçek panelleri
+// artık dashboard.html'de (public/modules/supplier.js, franchise.js) —
+// React tarafındaki karşılıkları hâlâ boş ComingSoon placeholder'ı. Bu
+// eşleme dururken supplier/franchise kullanıcıları yanlışlıkla "yakında
+// aktif olacak" sahte ekranına düşüyordu; şimdi diğer roller (buyer/seller/
+// logistics/finance) gibi doğrudan dashboard.html'e gidiyorlar.
 const ROLE_ROUTES: Record<string, string> = {
   admin: '/admin',
-  supplier: '/supplier',
-  franchise: '/franchise',
   influencer: '/affiliate',
 };
 

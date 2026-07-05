@@ -2,13 +2,13 @@
  * ComingSoon.tsx
  * ─────────────────────────────────────────────────────────────────────────────
  * MODÜL 3.1 — geçici fallback.
- * SupplierPanel / FranchisePanel / AffiliatePanel şu an derlenemiyor
- * (SupplierPanel & FranchisePanel → eksik '../lib/dampingvar';
- *  AffiliatePanel → eksik getReferralData/ensureReferralCode exportları).
- * Route'lar burada kuruluyor ki mimari hazır olsun; gerçek panel dosyaları
- * MODÜL 3.2'de (lib/dampingvar.ts + eksik supabase.ts fonksiyonları yazılınca)
- * bu fallback'in yerine geçecek. Bilerek SupplierPanel/FranchisePanel/
- * AffiliatePanel import EDİLMİYOR — aksi halde build kırılır.
+ * SupplierPanel.tsx / FranchisePanel.tsx / AffiliatePanel.tsx / CustomerHome.tsx
+ * TEMİZLİK turunda SİLİNDİ (ölü kod — hiçbir yerden import edilmiyordu ve
+ * '../lib/dampingvar' / eksik supabase.ts export'larına bağımlı oldukları
+ * için derlenemiyorlardı). Bu React panellerin geleceği artık dashboard.html
+ * modül sistemi (bkz. public/modules/live-sales.js, supplier.js, franchise.js)
+ * — React tarafında gerçek bir karşılığı inşa edilirse buradaki route'lar o
+ * zaman gerçek componentlerle değiştirilir.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 

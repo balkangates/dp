@@ -465,6 +465,9 @@ textarea.form-control{resize:vertical;min-height:80px}
         <!-- ══ TEDARİK & KOMİSYON YÖNETİMİ (module: catalog-admin.js) ═══ -->
         <div class="page" id="page-catalog-admin"></div>
 
+        <!-- ══ MAĞAZALAR (module: customer-stores.js) ═══════════════════ -->
+        <div class="page" id="page-stores"></div>
+
       </div><!-- /pages -->
     </div><!-- /content -->
   </div><!-- /main -->
@@ -785,6 +788,7 @@ try {
   await import('./modules/supplier.js');
   await import('./modules/franchise.js');
   await import('./modules/catalog-admin.js');
+  await import('./modules/customer-stores.js');
 } catch (e) {
   console.error('[ModuleRegistry] Yeni modüller yüklenemedi (dashboard genel işlevi ETKİLENMEZ):', e);
 }
@@ -878,9 +882,12 @@ const MENUS = {
   ],
   // CUSTOMER — eski adı "buyer". Normal B2C alıcı; ürün/ihale/sipariş
   // akışına erişir.
+  // CUSTOMER — eski adı "buyer". SADECE SATIN ALIR (bu revizyonla netleşti):
+  // ürün/ihale LİSTELEME yetkisi kaldırıldı ('products'/'auctions' menüden
+  // çıkarıldı). İhale özelliğinin kendisi kaldırılmadı — sadece customer
+  // artık bir ihale AÇAMAZ; dealer/admin açmaya devam edebilir.
   customer: [
-    { id: 'products',       icon: 'fa-boxes',            label: 'Ürün Ekle / Listele' },
-    { id: 'auctions',       icon: 'fa-gavel',            label: 'Canlı İhale Aç' },
+    { id: 'stores',         icon: 'fa-store',            label: 'Mağazalar' },
     { id: 'won-auctions',   icon: 'fa-trophy',           label: 'Kazandığım İhaleler' },
     { id: 'orders',         icon: 'fa-shopping-cart',    label: 'Siparişlerim' },
     { id: 'invoices',       icon: 'fa-file-invoice',     label: 'Fatura Listesi' },
@@ -1072,7 +1079,7 @@ window.navigateTo = function(pageId) {
     'auction-history': 'İhale Geçmişi', 'won-auctions': 'Kazandığım İhaleler',
     orders: 'Siparişler', invoices: 'Faturalar', logistics: 'Lojistik & Kargo',
     accounting: 'Muhasebe', finance: 'Finans & Escrow', profile: 'Profilim',
-    'trade-subs': 'Abonelik Ödemeleri', 'live-sales': 'Canlı Satış', 'dealer-catalog': 'Ürün Seçimi', 'dealer-performance': 'Performans', supplier: 'Tedarikçi Paneli', franchise: 'Franchise Paneli', 'catalog-admin': 'Tedarik & Komisyon',
+    'trade-subs': 'Abonelik Ödemeleri', 'live-sales': 'Canlı Satış', 'dealer-catalog': 'Ürün Seçimi', 'dealer-performance': 'Performans', supplier: 'Tedarikçi Paneli', franchise: 'Franchise Paneli', 'catalog-admin': 'Tedarik & Komisyon', stores: 'Mağazalar',
   };
   q('topbarTitle').textContent = titles[pageId] || pageId;
 

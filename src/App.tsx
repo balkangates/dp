@@ -19,10 +19,12 @@ import { SupabaseAuction } from './components/AuctionPanel';
 import { useAuth } from './contexts/AuthContext';
 
 // ─── MODÜL 3.1 — ROUTE TABLOSU ─────────────────────────────────────────────
-// SupplierPanel / FranchisePanel / AffiliatePanel bilerek import EDİLMİYOR:
-// üçü de '../lib/dampingvar' veya eksik supabase.ts export'larına bağımlı ve
-// şu an derlenmiyor. MODÜL 3.2'de o bağımlılıklar yazılınca buradaki
-// <ComingSoon /> satırları gerçek componentlerle değiştirilecek.
+// SupplierPanel.tsx / FranchisePanel.tsx / AffiliatePanel.tsx / CustomerHome.tsx
+// TEMİZLİK turunda (ölü kod) SİLİNDİ — hiçbiri hiçbir yerden import edilmiyordu
+// ve üçü '../lib/dampingvar' / eksik supabase.ts export'larına bağımlı olduğu
+// için zaten derlenemiyordu. Aşağıdaki <ComingSoon /> route'ları, bu paneller
+// gerçek dashboard.html modülleri (bkz. public/modules/) olarak yeniden inşa
+// edilene kadar yer tutucu olarak kalıyor.
 
 // ─── Inner App (AuthProvider içinde, useAuth kullanabilir) ───────────────────
 function AppInner() {
@@ -233,8 +235,10 @@ export default function App() {
           <Route path="/" element={<AppInner />} />
           <Route path="/trade-signals" element={<TradeSignals />} />
           <Route path="/admin" element={<RequireRole allowedRoles={['admin']}><AdminPayments /></RequireRole>} />
-          <Route path="/supplier" element={<RequireRole allowedRoles={['supplier']}><ComingSoon title="Tedarikçi Paneli" /></RequireRole>} />
-          <Route path="/franchise" element={<RequireRole allowedRoles={['franchise']}><ComingSoon title="Franchise Paneli" /></RequireRole>} />
+          {/* /supplier ve /franchise KALDIRILDI — gerçek panelleri artık
+              dashboard.html'de (public/modules/supplier.js, franchise.js).
+              Bu route'lar dururken kullanıcı sahte "geliştirme aşamasında"
+              ekranına düşüyordu; artık "*" fallback'i ile "/"e dönüyor. */}
           <Route path="/affiliate" element={<RequireRole allowedRoles={['influencer']}><ComingSoon title="Affiliate Paneli" /></RequireRole>} />
           {/* Tanımsız route → ana sayfaya geri dön */}
           <Route path="*" element={<Navigate to="/" replace />} />

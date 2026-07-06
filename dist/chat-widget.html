@@ -1,0 +1,1198 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DampingVar | Akıllı Chat Widget (index.html entegrasyonu)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+
+  <style>
+    /* ════════════════════════════════════════════════════════════
+       DAMPINGVAR AKILLI CHAT WIDGET
+       index.html'e eklenecek - mevcut CSS değişkenlerini kullanır
+       Supabase: chat_sessions + chat_messages tabloları
+    ════════════════════════════════════════════════════════════ */
+
+    :root {
+      --bg-primary:    #0A0E1A;
+      --bg-secondary:  #111827;
+      --bg-tertiary:   #1A2333;
+      --bg-card:       #131C2C;
+      --bg-elevated:   #1A2638;
+      --border:        #2A3650;
+      --text-primary:  #FFFFFF;
+      --text-secondary: #A3B3D1;
+      --text-muted:    #5E7090;
+      --gold:          #D4AF37;
+      --gold-dark:     #8B6914;
+      --gold-light:    #F5D76E;
+      --gold-border:   rgba(212, 175, 55, 0.4);
+      --accent-blue:   #38BDF8;
+      --accent-green:  #10B981;
+      --accent-red:    #EF4444;
+      --font-body:     'Inter', sans-serif;
+      --font-mono:     'JetBrains Mono', monospace;
+    }
+
+    body {
+      background: var(--bg-primary);
+      color: var(--text-secondary);
+      font-family: var(--font-body);
+      font-size: 14px;
+    }
+
+    /* ── CHAT FAB BUTONU ── */
+    #dv-chat-fab {
+      position: fixed;
+      bottom: 28px;
+      right: 28px;
+      z-index: 9999;
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--gold) 0%, #B8860B 100%);
+      border: none;
+      cursor: pointer;
+      box-shadow: 0 8px 32px rgba(212,175,55,0.45), 0 0 0 0 rgba(212,175,55,0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.3s cubic-bezier(0.34,1.56,0.64,1);
+      animation: fabPulse 2.5s ease-in-out infinite;
+    }
+    #dv-chat-fab:hover { transform: scale(1.1); box-shadow: 0 12px 40px rgba(212,175,55,0.55); }
+    #dv-chat-fab.open { transform: rotate(45deg) scale(0.9); animation: none; }
+
+    @keyframes fabPulse {
+      0%, 100% { box-shadow: 0 8px 32px rgba(212,175,55,0.45), 0 0 0 0 rgba(212,175,55,0.4); }
+      50%       { box-shadow: 0 8px 32px rgba(212,175,55,0.45), 0 0 0 10px rgba(212,175,55,0); }
+    }
+
+    .dv-fab-badge {
+      position: absolute;
+      top: -4px;
+      right: -4px;
+      width: 18px;
+      height: 18px;
+      background: var(--accent-red);
+      border-radius: 50%;
+      font-size: 10px;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 2px solid var(--bg-primary);
+      animation: badgeBounce 0.4s cubic-bezier(0.34,1.56,0.64,1);
+    }
+    @keyframes badgeBounce {
+      from { transform: scale(0); }
+      to   { transform: scale(1); }
+    }
+
+    /* ── CHAT PENCERESI ── */
+    #dv-chat-window {
+      position: fixed;
+      bottom: 100px;
+      right: 28px;
+      z-index: 9998;
+      width: 380px;
+      max-height: 620px;
+      background: var(--bg-card);
+      border: 1px solid var(--gold-border);
+      border-radius: 20px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 24px 80px -12px rgba(0,0,0,0.7), 0 0 0 1px rgba(212,175,55,0.1);
+      transform: translateY(20px) scale(0.95);
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.35s cubic-bezier(0.34,1.56,0.64,1);
+    }
+    #dv-chat-window.open {
+      transform: translateY(0) scale(1);
+      opacity: 1;
+      pointer-events: all;
+    }
+    @media (max-width: 440px) {
+      #dv-chat-window { right: 12px; left: 12px; width: auto; bottom: 90px; }
+      #dv-chat-fab   { right: 16px; bottom: 20px; }
+    }
+
+    /* ── HEADER ── */
+    .dv-chat-header {
+      background: linear-gradient(135deg, var(--bg-elevated) 0%, var(--bg-tertiary) 100%);
+      border-bottom: 1px solid var(--gold-border);
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+    .dv-chat-avatar {
+      width: 40px; height: 40px;
+      background: linear-gradient(135deg, var(--gold) 0%, #8B6914 100%);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px;
+      color: #000;
+      flex-shrink: 0;
+      position: relative;
+    }
+    .dv-online-dot {
+      position: absolute;
+      bottom: 1px; right: 1px;
+      width: 10px; height: 10px;
+      background: var(--accent-green);
+      border-radius: 50%;
+      border: 2px solid var(--bg-card);
+    }
+    .dv-chat-header-info { flex: 1; min-width: 0; }
+    .dv-chat-header-name { font-weight: 700; font-size: 0.85rem; color: var(--text-primary); }
+    .dv-chat-header-status { font-family: var(--font-mono); font-size: 0.6rem; color: var(--accent-green); }
+    .dv-chat-header-close {
+      width: 28px; height: 28px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--text-muted);
+      transition: all 0.2s;
+    }
+    .dv-chat-header-close:hover { background: rgba(239,68,68,0.15); color: var(--accent-red); border-color: var(--accent-red); }
+
+    /* ── LEAD FORM ── */
+    #dv-lead-form {
+      padding: 20px;
+      overflow-y: auto;
+      flex: 1;
+    }
+    .dv-lead-intro {
+      text-align: center;
+      padding: 16px 0 20px;
+    }
+    .dv-lead-intro .dv-brand-badge {
+      display: inline-block;
+      font-family: var(--font-mono);
+      font-size: 0.55rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      color: var(--gold);
+      background: rgba(212,175,55,0.1);
+      border: 1px solid var(--gold-border);
+      border-radius: 20px;
+      padding: 3px 10px;
+      margin-bottom: 10px;
+    }
+    .dv-lead-intro h3 { font-size: 1rem; font-weight: 800; color: var(--text-primary); margin-bottom: 6px; }
+    .dv-lead-intro p  { font-size: 0.75rem; color: var(--text-muted); line-height: 1.5; }
+
+    .dv-input-group { margin-bottom: 12px; }
+    .dv-input-group label {
+      display: block;
+      font-family: var(--font-mono);
+      font-size: 0.6rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      color: var(--gold);
+      text-transform: uppercase;
+      margin-bottom: 5px;
+    }
+    .dv-input, .dv-select {
+      width: 100%;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 9px 12px;
+      color: var(--text-primary);
+      font-family: var(--font-body);
+      font-size: 0.8rem;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .dv-input:focus, .dv-select:focus {
+      border-color: var(--gold);
+      box-shadow: 0 0 0 3px rgba(212,175,55,0.12);
+    }
+    .dv-select { appearance: none; cursor: pointer; }
+    .dv-select option { background: var(--bg-elevated); }
+
+    .dv-btn-start {
+      width: 100%;
+      padding: 11px;
+      background: linear-gradient(135deg, var(--gold) 0%, #B8860B 100%);
+      border: none;
+      border-radius: 10px;
+      color: #000;
+      font-weight: 800;
+      font-size: 0.85rem;
+      cursor: pointer;
+      letter-spacing: 0.04em;
+      transition: all 0.2s;
+      margin-top: 4px;
+    }
+    .dv-btn-start:hover { filter: brightness(1.1); transform: translateY(-1px); }
+
+    /* ── MESAJ ALANI ── */
+    #dv-chat-body {
+      display: none;
+      flex-direction: column;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* Funnel progress bar */
+    #dv-funnel-bar {
+      padding: 8px 16px;
+      background: var(--bg-elevated);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .dv-funnel-steps {
+      display: flex;
+      gap: 4px;
+      align-items: center;
+    }
+    .dv-funnel-step {
+      height: 3px;
+      border-radius: 2px;
+      flex: 1;
+      background: var(--border);
+      transition: background 0.4s;
+    }
+    .dv-funnel-step.done    { background: var(--accent-green); }
+    .dv-funnel-step.active  { background: var(--gold); }
+    .dv-funnel-label {
+      font-family: var(--font-mono);
+      font-size: 0.55rem;
+      color: var(--text-muted);
+      margin-top: 5px;
+    }
+    .dv-funnel-label span { color: var(--gold); font-weight: 700; }
+
+    /* Lead score badge */
+    #dv-lead-score-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 16px;
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .dv-score-label { font-family: var(--font-mono); font-size: 0.55rem; color: var(--text-muted); }
+    .dv-score-track { flex: 1; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+    .dv-score-fill  { height: 100%; border-radius: 2px; background: var(--accent-green); transition: width 0.5s; }
+    .dv-score-val   { font-family: var(--font-mono); font-size: 0.6rem; font-weight: 700; color: var(--accent-green); min-width: 36px; text-align: right; }
+
+    /* Messages list */
+    #dv-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      scroll-behavior: smooth;
+    }
+    #dv-messages::-webkit-scrollbar { width: 4px; }
+    #dv-messages::-webkit-scrollbar-thumb { background: var(--gold-dark); border-radius: 2px; }
+
+    .dv-msg { display: flex; flex-direction: column; gap: 3px; max-width: 85%; }
+    .dv-msg.bot  { align-self: flex-start; }
+    .dv-msg.user { align-self: flex-end; }
+
+    .dv-msg-bubble {
+      padding: 10px 14px;
+      border-radius: 16px;
+      font-size: 0.8rem;
+      line-height: 1.5;
+    }
+    .dv-msg.bot  .dv-msg-bubble {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      border-bottom-left-radius: 4px;
+    }
+    .dv-msg.user .dv-msg-bubble {
+      background: linear-gradient(135deg, var(--gold) 0%, #9A7A10 100%);
+      color: #000;
+      font-weight: 500;
+      border-bottom-right-radius: 4px;
+    }
+    .dv-msg-time {
+      font-family: var(--font-mono);
+      font-size: 0.55rem;
+      color: var(--text-muted);
+      padding: 0 4px;
+    }
+    .dv-msg.user .dv-msg-time { text-align: right; }
+
+    /* Quick reply chips */
+    .dv-quick-replies {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 6px;
+    }
+    .dv-qr-chip {
+      padding: 5px 12px;
+      background: rgba(212,175,55,0.08);
+      border: 1px solid var(--gold-border);
+      border-radius: 20px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--gold);
+      cursor: pointer;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+    .dv-qr-chip:hover { background: rgba(212,175,55,0.2); border-color: var(--gold); }
+
+    /* Typing indicator */
+    .dv-typing-bubble {
+      display: flex; gap: 4px; align-items: center;
+      padding: 10px 14px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      border-bottom-left-radius: 4px;
+      width: fit-content;
+    }
+    .dv-dot {
+      width: 6px; height: 6px;
+      background: var(--text-muted);
+      border-radius: 50%;
+      animation: typingDot 1.2s infinite;
+    }
+    .dv-dot:nth-child(2) { animation-delay: 0.2s; }
+    .dv-dot:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes typingDot {
+      0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+      40%           { opacity: 1;   transform: scale(1); }
+    }
+
+    /* CTA card */
+    .dv-cta-card {
+      background: linear-gradient(135deg, rgba(212,175,55,0.08) 0%, rgba(16,185,129,0.05) 100%);
+      border: 1px solid var(--gold-border);
+      border-radius: 12px;
+      padding: 12px;
+      margin-top: 4px;
+    }
+    .dv-cta-title { font-weight: 700; font-size: 0.8rem; color: var(--text-primary); margin-bottom: 4px; }
+    .dv-cta-desc  { font-size: 0.72rem; color: var(--text-muted); margin-bottom: 10px; line-height: 1.4; }
+    .dv-cta-btns  { display: flex; gap: 6px; flex-wrap: wrap; }
+    .dv-cta-btn-primary {
+      flex: 1;
+      padding: 7px 10px;
+      background: var(--gold);
+      color: #000;
+      font-weight: 700;
+      font-size: 0.72rem;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.2s;
+      text-decoration: none;
+      display: flex; align-items: center; justify-content: center; gap: 5px;
+    }
+    .dv-cta-btn-primary:hover { filter: brightness(1.1); }
+    .dv-cta-btn-secondary {
+      flex: 1;
+      padding: 7px 10px;
+      background: transparent;
+      color: var(--accent-green);
+      font-weight: 600;
+      font-size: 0.72rem;
+      border: 1px solid var(--accent-green);
+      border-radius: 8px;
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.2s;
+      display: flex; align-items: center; justify-content: center; gap: 5px;
+    }
+    .dv-cta-btn-secondary:hover { background: rgba(16,185,129,0.1); }
+
+    /* Input area */
+    .dv-input-area {
+      padding: 12px 14px;
+      border-top: 1px solid var(--border);
+      background: var(--bg-elevated);
+      display: flex;
+      gap: 8px;
+      align-items: flex-end;
+      flex-shrink: 0;
+    }
+    #dv-msg-input {
+      flex: 1;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 8px 12px;
+      color: var(--text-primary);
+      font-family: var(--font-body);
+      font-size: 0.8rem;
+      outline: none;
+      resize: none;
+      max-height: 80px;
+      transition: border-color 0.2s;
+    }
+    #dv-msg-input:focus { border-color: var(--gold); }
+    #dv-msg-input::placeholder { color: var(--text-muted); }
+
+    #dv-send-btn {
+      width: 36px; height: 36px;
+      background: var(--gold);
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      color: #000;
+      font-size: 13px;
+      transition: all 0.2s;
+      flex-shrink: 0;
+    }
+    #dv-send-btn:hover { filter: brightness(1.1); transform: scale(1.05); }
+    #dv-send-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+    /* Human handover notice */
+    .dv-human-notice {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 14px;
+      background: rgba(16,185,129,0.08);
+      border-top: 1px solid rgba(16,185,129,0.2);
+      font-size: 0.7rem;
+      color: var(--accent-green);
+      flex-shrink: 0;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════════════
+     DEMO PAGE BODY (sadece demo amaçlı - index.html'e sadece
+     aşağıdaki #dv-chat-fab + #dv-chat-window + <script> eklenir)
+══════════════════════════════════════════════════════════════ -->
+<div style="padding:40px;text-align:center;color:#5E7090;font-family:'JetBrains Mono',monospace;font-size:0.7rem;letter-spacing:0.1em;">
+  DAMPINGVAR · CHAT WIDGET DEMO<br>
+  <span style="color:#D4AF37">▼ Sağ alttaki altın butona tıkla ▼</span>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════
+     ❶ FAB BUTONU — index.html'e </body> den önce ekle
+══════════════════════════════════════════════════════════════ -->
+<button id="dv-chat-fab" aria-label="Canlı Destek">
+  <i class="fas fa-comments" style="color:#000;font-size:22px;" id="dv-fab-icon"></i>
+  <span class="dv-fab-badge" id="dv-fab-badge" style="display:none">1</span>
+</button>
+
+<!-- ══════════════════════════════════════════════════════════════
+     ❷ CHAT PENCERESI — index.html'e </body> den önce ekle
+══════════════════════════════════════════════════════════════ -->
+<div id="dv-chat-window" role="dialog" aria-label="DampingVar Canlı Destek">
+
+  <!-- Header -->
+  <div class="dv-chat-header">
+    <div class="dv-chat-avatar">
+      <i class="fas fa-robot" style="font-size:14px;"></i>
+      <span class="dv-online-dot"></span>
+    </div>
+    <div class="dv-chat-header-info">
+      <div class="dv-chat-header-name">DampingVar Asistan</div>
+      <div class="dv-chat-header-status" id="dv-header-status">● Çevrimiçi · Şimdi yanıt veriyor</div>
+    </div>
+    <button class="dv-chat-header-close" onclick="dvToggleChat()" aria-label="Kapat">
+      <i class="fas fa-times" style="font-size:11px;"></i>
+    </button>
+  </div>
+
+  <!-- ❸ LEAD FORM (başlangıç) -->
+  <div id="dv-lead-form">
+    <div class="dv-lead-intro">
+      <div class="dv-brand-badge">B2B TİCARET PLATFORMU</div>
+      <h3>Size nasıl yardımcı olabiliriz?</h3>
+      <p>Toptan alım, satış, canlı ihale veya Trink Sat hakkında uzmanlarımız sizinle konuşmaya hazır.</p>
+    </div>
+
+    <div class="dv-input-group">
+      <label>Ad Soyad</label>
+      <input id="dv-lead-name" class="dv-input" type="text" placeholder="Ahmet Yılmaz" autocomplete="name">
+    </div>
+    <div class="dv-input-group">
+      <label>E-posta</label>
+      <input id="dv-lead-email" class="dv-input" type="email" placeholder="ahmet@firma.com" autocomplete="email">
+    </div>
+    <div class="dv-input-group">
+      <label>Sektör</label>
+      <select id="dv-lead-sector" class="dv-select">
+        <option value="">-- Sektörünüzü seçin --</option>
+        <option value="tekstil">Tekstil & Giyim</option>
+        <option value="elektronik">Elektronik & Teknoloji</option>
+        <option value="gida">Gıda & İçecek</option>
+        <option value="insaat">İnşaat & Yapı Malzemeleri</option>
+        <option value="kimya">Kimya & Temizlik</option>
+        <option value="ambalaj">Ambalaj & Plastik</option>
+        <option value="makine">Makine & Ekipman</option>
+        <option value="otomotiv">Otomotiv & Yedek Parça</option>
+        <option value="tarim">Tarım & Hayvancılık</option>
+        <option value="diger">Diğer</option>
+      </select>
+    </div>
+    <div class="dv-input-group">
+      <label>Ben bir...</label>
+      <select id="dv-lead-role-hint" class="dv-select">
+        <option value="">-- Rolünüzü seçin --</option>
+        <option value="buyer">Toptan Alıcı / İthalatçı</option>
+        <option value="seller">Satıcı / İhracatçı / Üretici</option>
+        <option value="distributor">Distribütör / Bayi</option>
+        <option value="logistics">Lojistik / Kargo Firması</option>
+        <option value="general">Genel / Araştırıyorum</option>
+      </select>
+    </div>
+
+    <button class="dv-btn-start" onclick="dvStartChat()">
+      <i class="fas fa-comments" style="margin-right:6px;"></i> Konuşmayı Başlat
+    </button>
+    <p style="text-align:center;font-size:0.65rem;color:var(--text-muted);margin-top:10px;">
+      <i class="fas fa-shield-alt" style="color:var(--gold);margin-right:3px;"></i>
+      Bilgileriniz KVKK kapsamında korunur
+    </p>
+  </div>
+
+  <!-- ❹ CHAT BODY (form sonrası) -->
+  <div id="dv-chat-body">
+    <!-- Funnel Progress -->
+    <div id="dv-funnel-bar">
+      <div class="dv-funnel-steps" id="dv-funnel-steps"></div>
+      <div class="dv-funnel-label">Adım <span id="dv-funnel-current">1</span> / <span id="dv-funnel-total">5</span></div>
+    </div>
+
+    <!-- Lead Score -->
+    <div id="dv-lead-score-bar">
+      <span class="dv-score-label">MÜŞTERİ PUANI</span>
+      <div class="dv-score-track">
+        <div class="dv-score-fill" id="dv-score-fill" style="width:0%"></div>
+      </div>
+      <span class="dv-score-val" id="dv-score-val">0 / 100</span>
+    </div>
+
+    <!-- Messages -->
+    <div id="dv-messages"></div>
+
+    <!-- Human notice (gizli başlar) -->
+    <div class="dv-human-notice" id="dv-human-notice" style="display:none;">
+      <i class="fas fa-headset"></i>
+      <span>Müşteri temsilcisi konuşmaya bağlandı</span>
+      <span id="dv-agent-name" style="font-weight:700;margin-left:auto;"></span>
+    </div>
+
+    <!-- Input -->
+    <div class="dv-input-area">
+      <textarea id="dv-msg-input" rows="1" placeholder="Mesajınızı yazın..." maxlength="500"
+        onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();dvSendMessage();}"></textarea>
+      <button id="dv-send-btn" onclick="dvSendMessage()" aria-label="Gönder">
+        <i class="fas fa-paper-plane"></i>
+      </button>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════
+     ❺ SCRIPT BLOĞU — index.html'e ekle
+     Supabase import'unu kendi projenizin yoluna göre düzenleyin
+══════════════════════════════════════════════════════════════ -->
+<script type="module">
+  /* ── Supabase import (kendi projenizin yolunu kullanın) ── */
+  // import { supabase } from './assets/js/supabaseClient.js';
+
+  /* ─────────────────────────────────────────────────────────────
+     DEMO: Supabase olmadan çalışan mock
+     Gerçek projede yukardaki import'u açın, aşağıdaki mock'u kaldırın
+  ───────────────────────────────────────────────────────────── */
+  const supabase = {
+    from: (table) => ({
+      insert: async (data) => ({ data: [{ id: 'mock-' + Date.now() }], error: null }),
+      update: async (data) => ({ error: null }),
+      eq:     function() { return this; },
+      single: async () => ({ data: null, error: null }),
+      select: function() { return this; },
+      order:  function() { return this; },
+    }),
+    channel: (ch) => ({
+      on: function() { return this; },
+      subscribe: function() {}
+    })
+  };
+
+  /* ────────────────────────────────────────────
+     FUNNEL SORULARI (rol bazlı akıllı sıra)
+     Her soru: { id, text, type, options?, scoreKey, scoreMap? }
+  ──────────────────────────────────────────── */
+  const FUNNEL_BUYER = [
+    {
+      id: 'product_interest',
+      text: '🎯 Hangi ürün kategorisini toptan almak istiyorsunuz?',
+      type: 'chips',
+      options: ['Tekstil & Kumaş','Elektronik','Gıda & Ambalaj','İnşaat Malzemeleri','Kimyasal Ürünler','Diğer'],
+      scoreKey: 'category', scoreMap: { default: 15 }
+    },
+    {
+      id: 'quantity',
+      text: '📦 Ne kadar miktarda alım yapmayı planlıyorsunuz?',
+      type: 'chips',
+      options: ['1-10 ton / küçük lot','10-100 ton / orta','100+ ton / büyük hacim','Belirsiz, fiyat öğrenmek istiyorum'],
+      scoreKey: 'quantity', scoreMap: { '100+ ton / büyük hacim': 35, '10-100 ton / orta': 25, default: 15 }
+    },
+    {
+      id: 'urgency',
+      text: '⏱️ Ne zaman satın almayı düşünüyorsunuz?',
+      type: 'chips',
+      options: ['Bu hafta içinde','Bu ay içinde','1-3 ay içinde','Sadece araştırıyorum'],
+      scoreKey: 'urgency', scoreMap: { 'Bu hafta içinde': 30, 'Bu ay içinde': 20, default: 10 }
+    },
+    {
+      id: 'payment',
+      text: '💳 Ödeme tercihiniz nedir?',
+      type: 'chips',
+      options: ['Peşin / EFT','Vadeli (30-60-90 gün)','Akreditif (LC)','Escrow güvenceli'],
+      scoreKey: 'payment', scoreMap: { 'Peşin / EFT': 20, default: 10 }
+    }
+  ];
+
+  const FUNNEL_SELLER = [
+    {
+      id: 'product_type',
+      text: '📦 Hangi tür ürün satmak istiyorsunuz?',
+      type: 'chips',
+      options: ['Üretim fazlası stok','İptal sipariş / süresi yaklaşan','Sezonluk / stok eritmek','Normal fiyatlı toptan'],
+      scoreKey: 'product_type', scoreMap: { 'Üretim fazlası stok': 25, default: 15 }
+    },
+    {
+      id: 'stock_value',
+      text: '💰 Satmak istediğiniz stoğun yaklaşık değeri?',
+      type: 'chips',
+      options: ['50.000 ₺ altı','50K – 500K ₺','500K – 5M ₺','5M ₺ üzeri'],
+      scoreKey: 'stock_value', scoreMap: { '5M ₺ üzeri': 35, '500K – 5M ₺': 25, default: 15 }
+    },
+    {
+      id: 'sell_method',
+      text: '🚀 Hangi satış yöntemi sizi daha çok ilgilendiriyor?',
+      type: 'chips',
+      options: ['Trink Sat (anlık damping)','Canlı İhale','B2B Toptan Listeleme','Hepsi – maksimum erişim'],
+      scoreKey: 'sell_method', scoreMap: { 'Hepsi – maksimum erişim': 20, default: 15 }
+    },
+    {
+      id: 'timeline',
+      text: '⏰ Stoğunuzu ne kadar sürede satmak istiyorsunuz?',
+      type: 'chips',
+      options: ['Acil – bu hafta','1 ay içinde','3 ay içinde','Acelesi yok'],
+      scoreKey: 'timeline', scoreMap: { 'Acil – bu hafta': 25, default: 10 }
+    }
+  ];
+
+  const FUNNEL_GENERAL = [
+    {
+      id: 'goal',
+      text: '🌟 DampingVar\'a başvurma amacınız nedir?',
+      type: 'chips',
+      options: ['Ürün almak istiyorum','Ürün satmak istiyorum','Lojistik çözüm arıyorum','Influencer programı','Bilgi almak istiyorum'],
+      scoreKey: 'goal', scoreMap: { default: 20 }
+    }
+  ];
+
+  /* ────────────────────────────────────────────
+     DURUM
+  ──────────────────────────────────────────── */
+  let state = {
+    sessionId: null,
+    leadName: '',
+    leadEmail: '',
+    leadSector: '',
+    leadRole: '',
+    funnelQueue: [],
+    funnelIndex: 0,
+    score: 0,
+    answers: {},
+    humanMode: false,
+    agentId: null,
+    waitingReply: false
+  };
+
+  /* ────────────────────────────────────────────
+     TOGGLE CHAT
+  ──────────────────────────────────────────── */
+  window.dvToggleChat = function() {
+    const win = document.getElementById('dv-chat-window');
+    const fab = document.getElementById('dv-chat-fab');
+    const icon = document.getElementById('dv-fab-icon');
+    const badge = document.getElementById('dv-fab-badge');
+
+    win.classList.toggle('open');
+    fab.classList.toggle('open');
+
+    if (win.classList.contains('open')) {
+      icon.className = 'fas fa-times';
+      icon.style.color = '#000';
+      badge.style.display = 'none';
+    } else {
+      icon.className = 'fas fa-comments';
+    }
+  };
+
+  document.getElementById('dv-chat-fab').addEventListener('click', dvToggleChat);
+
+  /* ────────────────────────────────────────────
+     BAŞLAT
+  ──────────────────────────────────────────── */
+  window.dvStartChat = async function() {
+    const name   = document.getElementById('dv-lead-name').value.trim();
+    const email  = document.getElementById('dv-lead-email').value.trim();
+    const sector = document.getElementById('dv-lead-sector').value;
+    const role   = document.getElementById('dv-lead-role-hint').value;
+
+    if (!name || !email) {
+      document.getElementById('dv-lead-name').style.borderColor = name ? '' : 'var(--accent-red)';
+      document.getElementById('dv-lead-email').style.borderColor = email ? '' : 'var(--accent-red)';
+      return;
+    }
+
+    state.leadName  = name;
+    state.leadEmail = email;
+    state.leadSector = sector;
+    state.leadRole  = role;
+
+    /* Supabase'e session oluştur */
+    const { data } = await supabase.from('chat_sessions').insert({
+      lead_name:   name,
+      lead_email:  email,
+      lead_sector: sector,
+      lead_role:   role,
+      status:      'bot',
+      score:       0,
+      created_at:  new Date().toISOString()
+    });
+    state.sessionId = data?.[0]?.id || 'local-' + Date.now();
+
+    /* Funnel seç */
+    if (role === 'buyer' || role === 'distributor') state.funnelQueue = [...FUNNEL_BUYER];
+    else if (role === 'seller') state.funnelQueue = [...FUNNEL_SELLER];
+    else state.funnelQueue = [...FUNNEL_GENERAL, ...FUNNEL_BUYER.slice(0,2)];
+
+    /* UI geçiş */
+    document.getElementById('dv-lead-form').style.display = 'none';
+    document.getElementById('dv-chat-body').style.display = 'flex';
+
+    dvBuildFunnelBar();
+    dvBotMessage(`Merhaba ${name}! 👋 Ben DampingVar Akıllı Asistanı. Size en iyi çözümü bulabilmem için birkaç kısa soru sormam gerekiyor.`, null, 600);
+    setTimeout(() => dvAskFunnelQuestion(), 1800);
+  };
+
+  /* ────────────────────────────────────────────
+     FUNNEL BAR
+  ──────────────────────────────────────────── */
+  function dvBuildFunnelBar() {
+    const total = state.funnelQueue.length + 1;
+    const bar   = document.getElementById('dv-funnel-steps');
+    bar.innerHTML = '';
+    for (let i = 0; i < total; i++) {
+      const s = document.createElement('div');
+      s.className = 'dv-funnel-step' + (i === 0 ? ' active' : '');
+      s.id = 'fstep-' + i;
+      bar.appendChild(s);
+    }
+    document.getElementById('dv-funnel-total').textContent = total;
+    document.getElementById('dv-funnel-current').textContent = 1;
+  }
+
+  function dvUpdateFunnelBar(idx) {
+    const total = state.funnelQueue.length + 1;
+    for (let i = 0; i < total; i++) {
+      const el = document.getElementById('fstep-' + i);
+      if (!el) continue;
+      el.className = 'dv-funnel-step' + (i < idx ? ' done' : i === idx ? ' active' : '');
+    }
+    document.getElementById('dv-funnel-current').textContent = Math.min(idx + 1, total);
+  }
+
+  /* ────────────────────────────────────────────
+     SCORE
+  ──────────────────────────────────────────── */
+  function dvAddScore(q, answer) {
+    const map = q.scoreMap || {};
+    const pts = map[answer] ?? map.default ?? 10;
+    state.score = Math.min(100, state.score + pts);
+    document.getElementById('dv-score-fill').style.width = state.score + '%';
+    document.getElementById('dv-score-val').textContent  = state.score + ' / 100';
+
+    /* Renk güncelle */
+    const fill = document.getElementById('dv-score-fill');
+    if (state.score >= 70)      fill.style.background = 'var(--gold)';
+    else if (state.score >= 40) fill.style.background = 'var(--accent-blue)';
+    else                        fill.style.background = 'var(--accent-green)';
+  }
+
+  /* ────────────────────────────────────────────
+     FUNNEL SORULARI
+  ──────────────────────────────────────────── */
+  function dvAskFunnelQuestion() {
+    if (state.funnelIndex >= state.funnelQueue.length) {
+      dvFunnelComplete();
+      return;
+    }
+    const q = state.funnelQueue[state.funnelIndex];
+    dvUpdateFunnelBar(state.funnelIndex);
+    dvBotMessage(q.text, q.options);
+  }
+
+  /* ────────────────────────────────────────────
+     FUNNEL TAMAMLANDI → CTA
+  ──────────────────────────────────────────── */
+  function dvFunnelComplete() {
+    dvUpdateFunnelBar(state.funnelQueue.length);
+
+    let ctaTitle, ctaDesc, ctaBtnLabel, ctaBtnLink, ctaBtnLabel2, ctaBtnLink2;
+
+    if (state.leadRole === 'buyer' || state.leadRole === 'distributor') {
+      /* Yüksek değerli alıcı */
+      ctaTitle    = '🎯 En uygun fiyatlı stokları sizin için listeledik!';
+      ctaDesc     = `${state.leadSector ? state.leadSector.toUpperCase() + ' sektöründe' : 'Platformumuzda'} ` +
+                    `şu an ${Math.floor(Math.random()*40)+12} toptan teklif aktif. Üyeliğinizi tamamlayın, ` +
+                    `fiyat listelerini anında görün ve escrow güvencesiyle alım yapın.`;
+      ctaBtnLabel  = '🚀 Ücretsiz Üye Ol → Fiyatları Gör';
+      ctaBtnLink   = '/register?role=buyer&ref=chat';
+      ctaBtnLabel2 = '📋 Katalog İndir';
+      ctaBtnLink2  = '#trinkSat';
+    } else if (state.leadRole === 'seller') {
+      ctaTitle    = '💡 Stoğunuzu %5 komisyon almadan satalım!';
+      ctaDesc     = `Sistemimizdeki ${Math.floor(Math.random()*200)+300} aktif alıcıya, ` +
+                    `distribütör ve bayi gruplarına otomatik bildirim göndererek ürününüzü satışa çıkaralım. ` +
+                    `Trink Sat, Canlı İhale veya toptan listeleme ile en hızlı çözümü sunuyoruz.`;
+      ctaBtnLabel  = '📦 Ürün Ekle → Hemen Sat';
+      ctaBtnLink   = '/register?role=seller&ref=chat';
+      ctaBtnLabel2 = '📲 WhatsApp\'tan Ürün Gönder';
+      ctaBtnLink2  = 'https://wa.me/90XXXXXXXXXX?text=Merhaba, ürün satmak istiyorum';
+    } else {
+      ctaTitle    = '🌐 DampingVar\'ı keşfetmeye hazır mısınız?';
+      ctaDesc     = `Ücretsiz üyelikle platformumuzu tam olarak keşfedin. ` +
+                    `Toptan alım, damping satış ve canlı ihale çözümlerimizi inceleyin.`;
+      ctaBtnLabel  = '🎉 Ücretsiz Üye Ol';
+      ctaBtnLink   = '/register?ref=chat';
+      ctaBtnLabel2 = '📞 Uzman ile Konuş';
+      ctaBtnLink2  = '#contact';
+    }
+
+    /* CTA mesajı */
+    const ctaHtml = `
+      <div class="dv-cta-card">
+        <div class="dv-cta-title">${ctaTitle}</div>
+        <div class="dv-cta-desc">${ctaDesc}</div>
+        <div class="dv-cta-btns">
+          <a class="dv-cta-btn-primary" href="${ctaBtnLink}">
+            ${ctaBtnLabel}
+          </a>
+          <a class="dv-cta-btn-secondary" href="${ctaBtnLink2}">
+            ${ctaBtnLabel2}
+          </a>
+        </div>
+      </div>`;
+
+    const scoreMsg = state.score >= 60
+      ? `✅ Profiliniz incelendi — müşteri puanınız **${state.score}/100** ile **yüksek öncelik** statüsünde! `
+      : `📊 Profilinizi kaydettik (puan: ${state.score}/100). `;
+
+    dvBotMessage(scoreMsg + 'Sizin için en uygun çözümü hazırladım:', null, 0, ctaHtml);
+
+    /* Uzman bağlantısı sorusu */
+    setTimeout(() => {
+      dvBotMessage(
+        '📞 İsterseniz bir müşteri temsilcimizi hemen bağlayabilirim. Gerçek zamanlı destek almak ister misiniz?',
+        ['Evet, temsilci bağla', 'Hayır, teşekkürler']
+      );
+    }, 1500);
+
+    /* Supabase lead güncelle */
+    supabase.from('chat_sessions').update({
+      score:    state.score,
+      answers:  JSON.stringify(state.answers),
+      status:   state.score >= 60 ? 'hot_lead' : 'warm_lead'
+    }).eq('id', state.sessionId);
+  }
+
+  /* ────────────────────────────────────────────
+     MESAJ GÖSTER (bot)
+  ──────────────────────────────────────────── */
+  function dvBotMessage(text, chips = null, delay = 0, extraHtml = '') {
+    if (delay > 0) {
+      const typing = dvShowTyping();
+      setTimeout(() => {
+        typing.remove();
+        dvRenderBotMessage(text, chips, extraHtml);
+      }, delay);
+    } else {
+      dvRenderBotMessage(text, chips, extraHtml);
+    }
+  }
+
+  function dvRenderBotMessage(text, chips, extraHtml) {
+    const container = document.getElementById('dv-messages');
+    const wrap = document.createElement('div');
+    wrap.className = 'dv-msg bot';
+
+    const bubble = document.createElement('div');
+    bubble.className = 'dv-msg-bubble';
+    bubble.innerHTML = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+
+    const time = document.createElement('div');
+    time.className = 'dv-msg-time';
+    time.textContent = dvNow();
+
+    wrap.appendChild(bubble);
+    if (extraHtml) {
+      const extra = document.createElement('div');
+      extra.innerHTML = extraHtml;
+      wrap.appendChild(extra);
+    }
+    if (chips && chips.length) {
+      const qr = document.createElement('div');
+      qr.className = 'dv-quick-replies';
+      chips.forEach(c => {
+        const chip = document.createElement('button');
+        chip.className = 'dv-qr-chip';
+        chip.textContent = c;
+        chip.onclick = () => dvChipSelected(c);
+        qr.appendChild(chip);
+      });
+      wrap.appendChild(qr);
+    }
+    wrap.appendChild(time);
+    container.appendChild(wrap);
+    dvScrollBottom();
+
+    /* Supabase kayıt */
+    supabase.from('chat_messages').insert({
+      session_id: state.sessionId,
+      role:       'bot',
+      content:    text,
+      created_at: new Date().toISOString()
+    });
+  }
+
+  function dvShowTyping() {
+    const container = document.getElementById('dv-messages');
+    const wrap = document.createElement('div');
+    wrap.className = 'dv-msg bot';
+    wrap.id = 'dv-typing';
+    wrap.innerHTML = `<div class="dv-typing-bubble"><div class="dv-dot"></div><div class="dv-dot"></div><div class="dv-dot"></div></div>`;
+    container.appendChild(wrap);
+    dvScrollBottom();
+    return wrap;
+  }
+
+  /* ────────────────────────────────────────────
+     CHIP SEÇİLDİ
+  ──────────────────────────────────────────── */
+  window.dvChipSelected = function(answer) {
+    /* Chipları devre dışı bırak */
+    document.querySelectorAll('.dv-qr-chip').forEach(c => {
+      c.style.pointerEvents = 'none';
+      c.style.opacity = c.textContent === answer ? '1' : '0.3';
+    });
+
+    dvUserMessage(answer);
+
+    /* İnsan modu sorusuna özel cevap */
+    if (answer === 'Evet, temsilci bağla') {
+      dvRequestHuman();
+      return;
+    }
+    if (answer === 'Hayır, teşekkürler') {
+      dvBotMessage('Anladım! 😊 Sizi kaydettik. Üye olduğunuzda veya arama yaptığınızda her zaman buradayız.', null, 600);
+      return;
+    }
+
+    /* Funnel cevabı */
+    const q = state.funnelQueue[state.funnelIndex];
+    if (q) {
+      state.answers[q.id] = answer;
+      dvAddScore(q, answer);
+      state.funnelIndex++;
+    }
+
+    const typing = dvShowTyping();
+    setTimeout(() => {
+      typing.remove();
+      dvAskFunnelQuestion();
+    }, 800);
+  };
+
+  /* ────────────────────────────────────────────
+     SERBEST METİN GÖNDERİMİ
+  ──────────────────────────────────────────── */
+  window.dvSendMessage = function() {
+    const input = document.getElementById('dv-msg-input');
+    const text  = input.value.trim();
+    if (!text || state.waitingReply) return;
+
+    input.value = '';
+    dvUserMessage(text);
+
+    if (state.humanMode) {
+      /* Gerçek agent'a ilet — Supabase realtime */
+      supabase.from('chat_messages').insert({
+        session_id: state.sessionId,
+        role:       'user',
+        content:    text,
+        created_at: new Date().toISOString()
+      });
+    } else {
+      /* Bot modu: akıllı cevap */
+      state.waitingReply = true;
+      const typing = dvShowTyping();
+      setTimeout(() => {
+        typing.remove();
+        dvSmartBotReply(text);
+        state.waitingReply = false;
+      }, 900);
+    }
+  };
+
+  /* ────────────────────────────────────────────
+     AKILLI BOT YANITI
+  ──────────────────────────────────────────── */
+  function dvSmartBotReply(text) {
+    const t = text.toLowerCase();
+
+    if (t.includes('fiyat') || t.includes('ücret') || t.includes('maliyet')) {
+      dvBotMessage(
+        '💰 Fiyatlar ürün kategorisi, lot miktarı ve satış modeline göre değişir.\n\n' +
+        '🔥 **Trink Sat**: Piyasanın %30–70 altında anlık fiyatlar\n' +
+        '🔨 **Canlı İhale**: Başlangıç fiyatı siz belirleyin\n' +
+        '📦 **Toptan**: Fiyat listesi için üyelik gerekiyor\n\n' +
+        'Üye olarak tüm fiyatları görebilirsiniz:',
+        ['Üye Ol → Fiyatları Gör', 'Temsilci Bağla']
+      );
+    } else if (t.includes('nasıl') || t.includes('çalış')) {
+      dvBotMessage(
+        '⚡ **DampingVar nasıl çalışır?**\n\n' +
+        '1️⃣ Ücretsiz kayıt olun (2 dakika)\n' +
+        '2️⃣ Satıcı: Ürün yükleyin → sistem alıcılara bildirim gönderir\n' +
+        '   Alıcı: Listeye bakın → teklif verin veya anında satın alın\n' +
+        '3️⃣ Escrow havuzu güvencesiyle ödeme yapılır\n' +
+        '4️⃣ Teslimat onaylanınca ödeme serbest bırakılır\n\n' +
+        '**%5 komisyon yok** — düz ve şeffaf ticaret!'
+      );
+    } else if (t.includes('güven') || t.includes('dolandır') || t.includes('escrow')) {
+      dvBotMessage(
+        '🛡️ **Güvenlik önceliğimiz:**\n\n' +
+        '• **Escrow Sistemi**: Ödemeniz teslimat onaylanana kadar bağımsız havuzda\n' +
+        '• **Doğrulanmış Satıcı**: KVK + firma tescil belgesi zorunlu\n' +
+        '• **Banka entegrasyonu**: Havale / EFT / Akreditif desteği\n' +
+        '• **KVKK uyumlu**: Tüm veriler şifreli, TR sunucularında\n\n' +
+        'Güvenli alışveriş için escrow tercih edebilirsiniz.'
+      );
+    } else if (t.includes('komisyon') || t.includes('%')) {
+      dvBotMessage(
+        '🎉 **DampingVar\'da komisyon sistemi:**\n\n' +
+        '• Satıcı için liste ücreti: **ÜCRETSİZ**\n' +
+        '• Trink Sat işlem ücreti: **%0** (alıcıdan %2 platform ücreti)\n' +
+        '• Canlı İhale: Sadece başarılı işlemde küçük platform payı\n' +
+        '• Influencer programı: Getirdiğiniz satıcıdan **ömür boyu %2**\n\n' +
+        '**"Satıcıdan komisyon almıyoruz"** — bunun için buradayız.'
+      );
+    } else {
+      /* Default: temsilci öner */
+      dvBotMessage(
+        `"${text}" konusunda size en doğru bilgiyi vermek için bir uzmanımızı bağlayabilirim. ` +
+        'Müşteri temsilcimiz birkaç dakika içinde yanıt verecektir.',
+        ['Evet, temsilci bağla', 'Hayır, devam edelim']
+      );
+    }
+  }
+
+  /* ────────────────────────────────────────────
+     İNSAN BAĞLANTISI
+  ──────────────────────────────────────────── */
+  function dvRequestHuman() {
+    dvBotMessage('⏳ Müşteri temsilcisi aranıyor...', null, 0);
+    setTimeout(() => {
+      state.humanMode = true;
+
+      /* Supabase güncelle: status = 'waiting_agent' */
+      supabase.from('chat_sessions').update({
+        status:    'waiting_agent',
+        score:     state.score,
+        answers:   JSON.stringify(state.answers)
+      }).eq('id', state.sessionId);
+
+      document.getElementById('dv-human-notice').style.display = 'flex';
+      document.getElementById('dv-agent-name').textContent = 'Müşteri Temsilcisi';
+      document.getElementById('dv-header-status').textContent = '● Temsilci bağlandı';
+
+      dvBotMessage(
+        '✅ Müşteri temsilcimiz konuşmaya eklendi! ' +
+        'Bilgileriniz ve cevaplarınız aktarıldı, doğrudan yazabilirsiniz.',
+        null, 0
+      );
+
+      /* Dashboard chat panel'e realtime bildirim için Supabase channel */
+      // supabase.channel('chat-' + state.sessionId)
+      //   .on('postgres_changes', ...)
+      //   .subscribe();
+
+    }, 2000);
+  }
+
+  /* ────────────────────────────────────────────
+     KULLANICI MESAJI
+  ──────────────────────────────────────────── */
+  function dvUserMessage(text) {
+    const container = document.getElementById('dv-messages');
+    const wrap = document.createElement('div');
+    wrap.className = 'dv-msg user';
+    wrap.innerHTML = `
+      <div class="dv-msg-bubble">${text}</div>
+      <div class="dv-msg-time">${dvNow()}</div>`;
+    container.appendChild(wrap);
+    dvScrollBottom();
+  }
+
+  function dvScrollBottom() {
+    const el = document.getElementById('dv-messages');
+    if (el) el.scrollTop = el.scrollHeight;
+  }
+
+  function dvNow() {
+    return new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  /* ────────────────────────────────────────────
+     SUPABASE REALTIME: agent'tan gelen mesajları dinle
+     Gerçek projede açın
+  ──────────────────────────────────────────── */
+  // function dvListenForAgentMessages() {
+  //   supabase.channel('chat_messages_' + state.sessionId)
+  //     .on('postgres_changes', {
+  //       event: 'INSERT',
+  //       schema: 'public',
+  //       table: 'chat_messages',
+  //       filter: `session_id=eq.${state.sessionId}`
+  //     }, payload => {
+  //       if (payload.new.role === 'agent') {
+  //         dvRenderBotMessage(payload.new.content);
+  //       }
+  //     })
+  //     .subscribe();
+  // }
+
+</script>
+</body>
+</html>

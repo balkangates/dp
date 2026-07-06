@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { supabase } from '../lib/supabase';
+import { supabase, startDescendingAuction, getApprovedCatalogProducts } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
 
 // ─── Tipler ────────────────────────────────────────────────────────────────────
 interface Sector {
@@ -32,6 +33,12 @@ interface AuctionRow {
     sector: string | null;
     price: number;
   } | null;
+  catalog_products: {
+    id: string;
+    name: string;
+    image_url: string | null;
+    categories: { name: string } | null;
+  } | null;
 }
 
 interface AuctionListProps {
@@ -54,8 +61,103 @@ function fmtTimer(secs: number): string {
   return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
 }
 
-// ─── Ana Bileşen ────────────────────────────────────────────────────────────────
+// ─── Bayi: Onaylı Katalogdan Toptan Alım İhalesi Başlat ────────────────────────
+function StartAuctionForm({ dealerId, onCreated }: { dealerId: string; onCreated: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [products, setProducts] = useState<{ id: string; name: string; unit: string; unit_size: number; categories?: { name: string }[] | { name: string } | null }[]>([]);
+  const [catalogProductId, setCatalogProductId] = useState('');
+  const [startPrice, setStartPrice] = useState('');
+  const [quantity, setQuantity] = useState('');
+  const [quantityUnit, setQuantityUnit] = useState('kg');
+  const [durationHours, setDurationHours] = useState('12');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open && products.length === 0) {
+      getApprovedCatalogProducts().then(({ data }) => setProducts(data ?? []));
+    }
+  }, [open, products.length]);
+
+  const submit = async () => {
+    if (!catalogProductId || !startPrice || !quantity) {
+      setError('Ürün, tavan fiyat ve miktar zorunlu.');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    const { error: err } = await startDescendingAuction({
+      dealerId,
+      catalogProductId,
+      startPrice: parseFloat(startPrice),
+      quantity,
+      quantityUnit,
+      durationHours: parseFloat(durationHours) || 12,
+    });
+    setBusy(false);
+    if (err) { setError(err.message); return; }
+    setOpen(false);
+    setCatalogProductId(''); setStartPrice(''); setQuantity('');
+    onCreated();
+  };
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="mb-4 px-3 py-2 rounded-lg text-[11px] font-bold border border-[#D4AF37]/40 text-[#D4AF37] hover:bg-[#D4AF37]/10 cursor-pointer"
+      >
+        <i className="fas fa-plus mr-1"></i>Toptan Alım İhalesi Başlat
+      </button>
+    );
+  }
+
+  return (
+    <div className="mb-4 p-4 rounded-xl border border-[#2A3650] bg-[#090d16] space-y-2.5">
+      <div className="flex items-center justify-between">
+        <p className="text-white text-xs font-bold">Onaylı Katalogdan İhale Başlat</p>
+        <button onClick={() => setOpen(false)} className="text-[#5E7090] hover:text-white text-sm cursor-pointer">✕</button>
+      </div>
+      <select
+        value={catalogProductId}
+        onChange={(e) => setCatalogProductId(e.target.value)}
+        className="w-full bg-[#131C2C] border border-[#2A3650] rounded-lg px-3 py-2 text-xs text-white"
+      >
+        <option value="">— Onaylı ürün seçin —</option>
+        {products.map(p => {
+          const catName = Array.isArray(p.categories) ? p.categories[0]?.name : p.categories?.name;
+          return <option key={p.id} value={p.id}>{p.name} ({catName ?? 'Kategorisiz'})</option>;
+        })}
+      </select>
+      <div className="grid grid-cols-3 gap-2">
+        <input placeholder="Tavan fiyat ₺" type="number" value={startPrice} onChange={e => setStartPrice(e.target.value)}
+          className="bg-[#131C2C] border border-[#2A3650] rounded-lg px-2 py-2 text-xs text-white" />
+        <input placeholder="Miktar" value={quantity} onChange={e => setQuantity(e.target.value)}
+          className="bg-[#131C2C] border border-[#2A3650] rounded-lg px-2 py-2 text-xs text-white" />
+        <select value={quantityUnit} onChange={e => setQuantityUnit(e.target.value)}
+          className="bg-[#131C2C] border border-[#2A3650] rounded-lg px-2 py-2 text-xs text-white">
+          <option value="kg">kg</option><option value="adet">adet</option><option value="ton">ton</option><option value="koli">koli</option>
+        </select>
+      </div>
+      <input placeholder="Süre (saat)" type="number" value={durationHours} onChange={e => setDurationHours(e.target.value)}
+        className="w-full bg-[#131C2C] border border-[#2A3650] rounded-lg px-3 py-2 text-xs text-white" />
+      {error && <p className="text-red-400 text-[10px] font-mono">{error}</p>}
+      <button
+        onClick={submit}
+        disabled={busy}
+        className="w-full py-2 rounded-lg text-xs font-extrabold"
+        style={{ background: 'linear-gradient(135deg,#D4AF37,#F5D76E)', color: '#000', opacity: busy ? 0.6 : 1 }}
+      >
+        {busy ? '…' : 'İhaleyi Başlat'}
+      </button>
+      <p className="text-[9px] text-[#5E7090] font-mono">Sadece tedarikçiler (supplier) teklif verebilir. Fiyat, tavan fiyatın altına düştükçe düşer.</p>
+    </div>
+  );
+}
+
+
 export default function AuctionList({ activeId, onSelect }: AuctionListProps) {
+  const { profile } = useAuth();
 
   const [sectors, setSectors]   = useState<Sector[]>([]);
   const [auctions, setAuctions] = useState<AuctionRow[]>([]);
@@ -110,6 +212,12 @@ export default function AuctionList({ activeId, onSelect }: AuctionListProps) {
           category,
           sector,
           price
+        ),
+        catalog_products (
+          id,
+          name,
+          image_url,
+          categories(name)
         )
       `)
       .eq('status', 'active')
@@ -117,7 +225,7 @@ export default function AuctionList({ activeId, onSelect }: AuctionListProps) {
       .limit(20);
 
     if (!error && data) {
-      setAuctions(data as AuctionRow[]);
+      setAuctions(data as unknown as AuctionRow[]);
       // Timer başlat
       const init: Record<string, number> = {};
       data.forEach(a => {
@@ -233,6 +341,10 @@ export default function AuctionList({ activeId, onSelect }: AuctionListProps) {
         </span>
       </div>
 
+      {profile?.role === 'dealer' && (
+        <StartAuctionForm dealerId={profile.id} onCreated={fetchAuctions} />
+      )}
+
       {/* Sektör filtreleri — sectors tablosundan */}
       <div className="flex gap-2 mb-5 overflow-x-auto no-scrollbar pb-1">
         <button
@@ -298,8 +410,8 @@ export default function AuctionList({ activeId, onSelect }: AuctionListProps) {
           const urgent    = t > 0 && t <= 300;  // son 5 dk
           const critical  = t > 0 && t <= 60;   // son 1 dk
           const price     = auction.current_bid ?? auction.start_price ?? 0;
-          const title     = auction.products?.title ?? 'İhale';
-          const imageUrl  = auction.products?.image_url ?? null;
+          const title     = auction.catalog_products?.name ?? auction.products?.title ?? 'İhale';
+          const imageUrl  = auction.catalog_products?.image_url ?? auction.products?.image_url ?? null;
           const typeLabel = auction.auction_type === 'descending' ? '↓ Azalan' : '↑ Artan';
           const typeColor = auction.auction_type === 'descending' ? '#38BDF8' : '#10B981';
 

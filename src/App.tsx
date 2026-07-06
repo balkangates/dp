@@ -9,6 +9,7 @@ import ProductGrid from './components/ProductGrid';
 import CartSidebar from './components/CartSidebar';
 import StatsBar from './components/StatsBar';
 import Leaderboard from './components/Leaderboard';
+import CustomerHome from './components/CustomerHome';
 import TradeSignals from './components/TradeSignals';
 import AdminPayments from './components/AdminPayments';
 import ComingSoon from './components/ComingSoon';
@@ -19,16 +20,14 @@ import { SupabaseAuction } from './components/AuctionPanel';
 import { useAuth } from './contexts/AuthContext';
 
 // ─── MODÜL 3.1 — ROUTE TABLOSU ─────────────────────────────────────────────
-// SupplierPanel.tsx / FranchisePanel.tsx / AffiliatePanel.tsx / CustomerHome.tsx
-// TEMİZLİK turunda (ölü kod) SİLİNDİ — hiçbiri hiçbir yerden import edilmiyordu
-// ve üçü '../lib/dampingvar' / eksik supabase.ts export'larına bağımlı olduğu
-// için zaten derlenemiyordu. Aşağıdaki <ComingSoon /> route'ları, bu paneller
-// gerçek dashboard.html modülleri (bkz. public/modules/) olarak yeniden inşa
-// edilene kadar yer tutucu olarak kalıyor.
+// SupplierPanel.tsx / FranchisePanel.tsx / AffiliatePanel.tsx hâlâ ölü kod
+// (dashboard.html modülleri gerçek panel). CustomerHome.tsx ise v10'da
+// GERİ BAĞLANDI: müşteri (customer) giriş yapınca mağaza seçimi zorunlu
+// olan gerçek bayi-mağazası akışı bunun üzerinden çalışıyor (bkz. AppInner).
 
 // ─── Inner App (AuthProvider içinde, useAuth kullanabilir) ───────────────────
 function AppInner() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [cartOpen, setCartOpen] = useState(false);
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
 
@@ -174,20 +173,26 @@ function AppInner() {
         {/* Auction List — auctions tablosundan */}
         <AuctionList auctions={auctions} activeId={activeAuctionId} onSelect={handleSelectAuction} />
 
-        {/* Leaderboard + Products */}
-        <div className="grid grid-cols-1 xl:grid-cols-[320px_1fr] gap-5">
-          <div className="hidden xl:block">
-            {/* Leaderboard — seller_stats tablosundan (Realtime) */}
-            <Leaderboard />
-          </div>
-          {/* ProductGrid — products tablosundan */}
-          <ProductGrid onAddToCart={handleAddToCart} />
-        </div>
+        {/* Leaderboard + Products — müşteri girişliyse ÖNCE mağaza seçimi zorunlu */}
+        {profile?.role === 'customer' ? (
+          <CustomerHome />
+        ) : (
+          <>
+            <div className="grid grid-cols-1 xl:grid-cols-[320px_1fr] gap-5">
+              <div className="hidden xl:block">
+                {/* Leaderboard — store_leaderboard view'ından (bayi mağaza sıralaması) */}
+                <Leaderboard />
+              </div>
+              {/* ProductGrid — products tablosundan */}
+              <ProductGrid onAddToCart={handleAddToCart} />
+            </div>
 
-        {/* Mobile Leaderboard */}
-        <div className="xl:hidden">
-          <Leaderboard />
-        </div>
+            {/* Mobile Leaderboard */}
+            <div className="xl:hidden">
+              <Leaderboard />
+            </div>
+          </>
+        )}
       </main>
 
       {/* Footer */}

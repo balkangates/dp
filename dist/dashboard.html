@@ -307,6 +307,25 @@ textarea.form-control{resize:vertical;min-height:80px}
             <thead><tr><th>Sipariş No</th><th>Ürün</th><th id="ordersPartyHeader">Karşı Taraf</th><th>Tutar</th><th>Ödeme</th><th>Kargo</th><th>Escrow</th><th>Tarih</th><th>İşlem</th></tr></thead>
             <tbody id="ordersTable"><tr><td colspan="8" style="text-align:center;padding:24px;color:var(--muted)"><i class="fas fa-spinner fa-spin"></i></td></tr></tbody>
           </table></div>
+
+          <!-- ══ CANLI SATIŞ / BAYİ VİTRİNİ SİPARİŞLERİ (store_orders) ══════
+               MİMARİ NOT: orders/store_orders KONSOLİDASYON — Faz 1.
+               store_orders/catalog_products kalıcı mimari olarak kabul edildi;
+               orders (bireysel ilan modeli) donduruldu, yeni geliştirme almaz.
+               Bu iki tablo farklı kolon/aksiyon setlerine sahip olduğu için
+               (escrow/fatura/PDF akışı store_orders'ta henüz YOK) TEK bir
+               tabloda zorla birleştirmek yanlış bilgi verirdi — bu yüzden
+               AYRI ama HER İKİSİ DE GÖRÜNÜR bir ikinci bölüm eklendi. Daha
+               önce bu siparişler dealer'ın kendi "Siparişlerim" ekranında
+               HİÇ görünmüyordu — bu Faz 1'in çözdüğü kritik problem. ═══ -->
+          <div class="section-head" style="margin-top:24px">
+            <div class="section-title"><i class="fas fa-video" style="color:var(--red)"></i>Canlı Satış / Bayi Vitrini Siparişleri</div>
+            <span class="tag tag-gray" style="font-size:10px">Yeni sistem — fatura/escrow entegrasyonu henüz yok</span>
+          </div>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Sipariş</th><th>Mağaza</th><th>Ürünler</th><th>Tutar</th><th>Ödeme</th><th>Durum</th><th>Kaynak</th><th>Tarih</th></tr></thead>
+            <tbody id="storeOrdersTable"><tr><td colspan="8" style="text-align:center;padding:24px;color:var(--muted)"><i class="fas fa-spinner fa-spin"></i></td></tr></tbody>
+          </table></div>
         </div>
 
         <!-- ══ FATURALAR ══════════════════════════════════════════════ -->
@@ -445,6 +464,9 @@ textarea.form-control{resize:vertical;min-height:80px}
 
         <!-- ══ TEDARİK & KOMİSYON YÖNETİMİ (module: catalog-admin.js) ═══ -->
         <div class="page" id="page-catalog-admin"></div>
+
+        <!-- ══ MAĞAZALAR (module: customer-stores.js) ═══════════════════ -->
+        <div class="page" id="page-stores"></div>
 
       </div><!-- /pages -->
     </div><!-- /content -->
@@ -766,6 +788,7 @@ try {
   await import('./modules/supplier.js');
   await import('./modules/franchise.js');
   await import('./modules/catalog-admin.js');
+  await import('./modules/customer-stores.js');
 } catch (e) {
   console.error('[ModuleRegistry] Yeni modüller yüklenemedi (dashboard genel işlevi ETKİLENMEZ):', e);
 }
@@ -841,6 +864,11 @@ function statusTag(status) {
     'ended': '<span class="tag tag-gray">Bitti</span>',
     'upcoming': '<span class="tag tag-blue">Yaklaşan</span>',
     'approved': '<span class="tag tag-green">Onaylandı</span>',
+    // store_orders (order_status_enum) — orders'takinden farklı sözlük:
+    'PAYMENT_PENDING': '<span class="tag tag-amber">Ödeme Bekliyor</span>',
+    'PREPARING': '<span class="tag tag-blue">Hazırlanıyor</span>',
+    'READY': '<span class="tag tag-blue">Hazır</span>',
+    'COMPLETED': '<span class="tag tag-green">Tamamlandı</span>',
   };
   return map[status] || `<span class="tag tag-gray">${status||'—'}</span>`;
 }
@@ -854,9 +882,12 @@ const MENUS = {
   ],
   // CUSTOMER — eski adı "buyer". Normal B2C alıcı; ürün/ihale/sipariş
   // akışına erişir.
+  // CUSTOMER — eski adı "buyer". SADECE SATIN ALIR (bu revizyonla netleşti):
+  // ürün/ihale LİSTELEME yetkisi kaldırıldı ('products'/'auctions' menüden
+  // çıkarıldı). İhale özelliğinin kendisi kaldırılmadı — sadece customer
+  // artık bir ihale AÇAMAZ; dealer/admin açmaya devam edebilir.
   customer: [
-    { id: 'products',       icon: 'fa-boxes',            label: 'Ürün Ekle / Listele' },
-    { id: 'auctions',       icon: 'fa-gavel',            label: 'Canlı İhale Aç' },
+    { id: 'stores',         icon: 'fa-store',            label: 'Mağazalar' },
     { id: 'won-auctions',   icon: 'fa-trophy',           label: 'Kazandığım İhaleler' },
     { id: 'orders',         icon: 'fa-shopping-cart',    label: 'Siparişlerim' },
     { id: 'invoices',       icon: 'fa-file-invoice',     label: 'Fatura Listesi' },
@@ -1048,7 +1079,7 @@ window.navigateTo = function(pageId) {
     'auction-history': 'İhale Geçmişi', 'won-auctions': 'Kazandığım İhaleler',
     orders: 'Siparişler', invoices: 'Faturalar', logistics: 'Lojistik & Kargo',
     accounting: 'Muhasebe', finance: 'Finans & Escrow', profile: 'Profilim',
-    'trade-subs': 'Abonelik Ödemeleri', 'live-sales': 'Canlı Satış', 'dealer-catalog': 'Ürün Seçimi', 'dealer-performance': 'Performans', supplier: 'Tedarikçi Paneli', franchise: 'Franchise Paneli', 'catalog-admin': 'Tedarik & Komisyon',
+    'trade-subs': 'Abonelik Ödemeleri', 'live-sales': 'Canlı Satış', 'dealer-catalog': 'Ürün Seçimi', 'dealer-performance': 'Performans', supplier: 'Tedarikçi Paneli', franchise: 'Franchise Paneli', 'catalog-admin': 'Tedarik & Komisyon', stores: 'Mağazalar',
   };
   q('topbarTitle').textContent = titles[pageId] || pageId;
 
@@ -1729,6 +1760,64 @@ async function loadOrders(filter = 'all') {
   const { data } = await query;
   allOrders = data || [];
   renderOrdersTable(allOrders);
+
+  // orders/store_orders KONSOLİDASYON — Faz 1: aynı sayfada, ayrı tablo.
+  loadStoreOrders();
+}
+
+// ─── STORE ORDERS (yeni: Canlı Satış / Bayi Vitrini sistemi) ──────────
+// orders'tan FARKLI bir tablo — kendi kolon/durum setine sahip (bkz.
+// order_status_enum). Escrow/fatura/PDF akışı bu tabloda henüz YOK, bu
+// yüzden buradaki aksiyonlar bilerek sade (sadece görüntüleme).
+async function loadStoreOrders() {
+  const role = currentProfile?.role;
+  const tbody = q('storeOrdersTable');
+  if (!tbody) return;
+
+  let query = sb.from('store_orders')
+    .select('*, stores(name, owner_id), store_order_items(id, product_name, quantity, unit_price, total_price)')
+    .order('created_at', { ascending: false }).limit(50);
+
+  if (role === 'dealer') {
+    // store_orders.store_id -> stores.owner_id = ben olan mağazalar
+    const { data: myStores } = await sb.from('stores').select('id').eq('owner_id', currentUser.id);
+    const storeIds = (myStores || []).map(s => s.id);
+    if (storeIds.length === 0) { tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--muted)">Henüz bir mağazanız yok.</td></tr>'; return; }
+    query = query.in('store_id', storeIds);
+  } else if (role === 'customer') {
+    query = query.eq('customer_id', currentUser.id);
+  } else if (!['admin', 'logistics', 'finance'].includes(role)) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--muted)">—</td></tr>';
+    return;
+  }
+  // admin, logistics, finance → filtresiz, tümünü görür
+
+  const { data, error } = await query;
+  if (error) { console.error('[loadStoreOrders]', error); tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--red)">Yüklenemedi</td></tr>'; return; }
+  renderStoreOrdersTable(data || []);
+}
+
+function renderStoreOrdersTable(orders) {
+  const tbody = q('storeOrdersTable');
+  if (!tbody) return;
+  tbody.innerHTML = orders.length ? orders.map(o => {
+    const items = (o.store_order_items || []).map(i => `${i.product_name} ×${i.quantity}`).join(', ') || '—';
+    const paymentLabel = o.payment_method === 'card_pos' ? 'Kart/POS' : 'Nakit';
+    const paymentTag = o.payment_confirmed
+      ? `<span class="tag tag-green">${paymentLabel} — Onaylı</span>`
+      : `<span class="tag tag-amber">${paymentLabel} — Bekliyor</span>`;
+    return `<tr>
+      <td style="font-family:'Courier New',monospace;font-size:11px">${o.id.slice(0,8)}</td>
+      <td style="font-size:11px">${o.stores?.name || '—'}</td>
+      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;font-size:11px" title="${items}">${items}</td>
+      <td style="font-family:'Courier New',monospace;font-weight:900;color:var(--gold)">${fmt(o.total_amount)}</td>
+      <td>${paymentTag}</td>
+      <td>${statusTag(o.status)}</td>
+      <td>${o.placed_from_live ? '<span class="tag tag-red"><i class="fas fa-video"></i> Canlı</span>' : '<span class="tag tag-gray">Vitrin</span>'}</td>
+      <td style="font-size:11px">${fmtDate(o.created_at)}</td>
+    </tr>`;
+  }).join('')
+  : '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--muted)">Canlı satış siparişi yok</td></tr>';
 }
 
 function renderOrdersTable(orders) {

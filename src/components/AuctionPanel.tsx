@@ -16,7 +16,11 @@ export interface SupabaseAuction {
   winner_id: string | null;
   status: string;
   extended_count: number;
+  auction_type?: string | null;
+  quantity?: string | null;
+  quantity_unit?: string | null;
   products?: { title: string; description: string; image_url: string; category: string } | null;
+  catalog_products?: { name: string; description: string | null; image_url: string | null; unit: string; unit_size: number; categories?: { name: string } | null } | null;
   // Fallback: data.ts AuctionItem alanları da destekleniyor
   title?: string;
   description?: string;
@@ -42,9 +46,10 @@ function normalize(auction: SupabaseAuction) {
   const nowMs = Date.now();
   const timeLeft = Math.max(0, Math.floor((endMs - nowMs) / 1000));
   const duration = auction.duration ?? timeLeft + 60;
+  const isDescending = auction.auction_type === 'descending';
   return {
-    title: auction.products?.title ?? auction.title ?? 'İhale',
-    description: auction.products?.description ?? auction.description ?? '',
+    title: auction.catalog_products?.name ?? auction.products?.title ?? auction.title ?? 'İhale',
+    description: auction.catalog_products?.description ?? auction.products?.description ?? auction.description ?? '',
     currentPrice: auction.current_bid ?? auction.start_price ?? 0,
     minIncrement: auction.bid_increment ?? auction.minIncrement ?? 250,
     bidCount: auction.bid_count ?? 0,
@@ -53,6 +58,8 @@ function normalize(auction: SupabaseAuction) {
     timeLeft,
     duration,
     leaderName: auction.leaderName ?? null,
+    isDescending,
+    quantityLabel: auction.quantity ? `${auction.quantity} ${auction.quantity_unit ?? ''}` : null,
   };
 }
 
@@ -167,8 +174,17 @@ export default function AuctionPanel({ auction, onBid, onAuctionEnd }: AuctionPa
 
   // ─── Teklif Ver ──────────────────────────────────────────────────────────
   const handleBid = useCallback(async () => {
-    const amount = bidAmount ? parseFloat(bidAmount) : currentPrice + norm.minIncrement;
-    if (amount <= currentPrice) {
+    if (norm.isDescending && profile?.role !== 'supplier') {
+      setBidError('Bu toptan alım ihalesine sadece tedarikçi (supplier) hesapları teklif verebilir.');
+      return;
+    }
+    const amount = bidAmount ? parseFloat(bidAmount) : (norm.isDescending ? currentPrice - norm.minIncrement : currentPrice + norm.minIncrement);
+    if (norm.isDescending) {
+      if (amount >= currentPrice || amount <= 0) {
+        setBidError(`Teklifiniz mevcut fiyattan (${formatPrice(currentPrice)}) düşük olmalı.`);
+        return;
+      }
+    } else if (amount <= currentPrice) {
       setBidError(`Teklifiniz mevcut fiyattan (${formatPrice(currentPrice)}) yüksek olmalı.`);
       return;
     }
@@ -198,7 +214,7 @@ export default function AuctionPanel({ auction, onBid, onAuctionEnd }: AuctionPa
     if (isRealAuction && user?.id) {
       setIsPlacingBid(true);
       try {
-        const { error } = await placeBid(auction.id, user.id, amount);
+        const { error } = await placeBid(auction.id, user.id, amount, auction.auction_type);
         if (error) {
           setBidError('Teklif gönderilemedi: ' + error.message);
           // Rollback optimistic update
@@ -269,7 +285,7 @@ export default function AuctionPanel({ auction, onBid, onAuctionEnd }: AuctionPa
           {isPriceAnimating && <div className="absolute inset-0 shimmer" />}
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-[10px] text-[#D4AF37] font-mono font-bold mb-1">GÜNCEL EN YÜKSEK TEKLİF</p>
+              <p className="text-[10px] text-[#D4AF37] font-mono font-bold mb-1">{norm.isDescending ? 'GÜNCEL EN DÜŞÜK TEKLİF' : 'GÜNCEL EN YÜKSEK TEKLİF'}</p>
               <div className={`font-mono text-2xl font-black text-white ${isPriceAnimating ? 'price-pulse' : ''}`}>
                 {formatPrice(currentPrice)}
               </div>
@@ -359,18 +375,23 @@ export default function AuctionPanel({ auction, onBid, onAuctionEnd }: AuctionPa
             <i className="fas fa-lock mr-1"></i>Teklif vermek için giriş yapın
           </p>
         )}
+        {user && norm.isDescending && profile?.role !== 'supplier' && (
+          <p className="text-[10px] text-[#D4AF37] font-mono text-center mb-2">
+            <i className="fas fa-lock mr-1"></i>Bu toptan alım ihalesine sadece tedarikçiler teklif verebilir — izleyebilirsiniz.
+          </p>
+        )}
         <div className="flex gap-2">
           <input
             type="number"
             value={bidAmount}
             onChange={(e) => setBidAmount(e.target.value)}
-            placeholder={`Min: ${formatPrice(currentPrice + norm.minIncrement)}`}
-            disabled={showWinner || isPlacingBid}
+            placeholder={norm.isDescending ? `Maks: ${formatPrice(currentPrice - norm.minIncrement)}` : `Min: ${formatPrice(currentPrice + norm.minIncrement)}`}
+            disabled={showWinner || isPlacingBid || (norm.isDescending && profile?.role !== 'supplier')}
             className="bg-[#090d16] border border-[#2A3650] rounded-xl px-3 py-2.5 text-white font-mono font-bold text-sm w-[45%] text-center focus:outline-none focus:border-[#D4AF37] transition-colors placeholder:text-[#5E7090] placeholder:text-[10px] disabled:opacity-50"
           />
           <button
             onClick={handleBid}
-            disabled={showWinner || isPlacingBid || (isRealAuction && !user)}
+            disabled={showWinner || isPlacingBid || (isRealAuction && !user) || (norm.isDescending && profile?.role !== 'supplier')}
             className="flex-1 rounded-xl font-black text-sm flex items-center justify-center gap-2 cursor-pointer transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ background: 'linear-gradient(135deg, #F59E0B, #EAB308)', color: '#000' }}
           >
@@ -381,11 +402,11 @@ export default function AuctionPanel({ auction, onBid, onAuctionEnd }: AuctionPa
           {[1, 2, 5].map(mult => (
             <button
               key={mult}
-              onClick={() => setBidAmount(String(currentPrice + norm.minIncrement * mult))}
-              disabled={showWinner}
+              onClick={() => setBidAmount(String(norm.isDescending ? currentPrice - norm.minIncrement * mult : currentPrice + norm.minIncrement * mult))}
+              disabled={showWinner || (norm.isDescending && profile?.role !== 'supplier')}
               className="flex-1 text-[10px] font-mono font-bold text-[#5E7090] hover:text-[#D4AF37] bg-[#090d16] border border-[#2A3650] rounded-lg py-1.5 cursor-pointer transition-colors hover:border-[#D4AF37]/30 disabled:opacity-50"
             >
-              +{formatPrice(norm.minIncrement * mult)}
+              {norm.isDescending ? '−' : '+'}{formatPrice(norm.minIncrement * mult)}
             </button>
           ))}
         </div>

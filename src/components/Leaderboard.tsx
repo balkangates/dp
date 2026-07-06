@@ -16,17 +16,15 @@ interface LeaderEntry {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function mapRow(row: Record<string, any>, rank: number): LeaderEntry {
-  const profile = row.profiles;
-  const name = profile?.company_name ?? profile?.full_name ?? row.seller_name ?? 'Satıcı';
   return {
     id: row.id,
     rank,
-    name,
-    avatar: profile?.avatar_url ?? SIMULATED_USERS[rank % SIMULATED_USERS.length].avatar,
+    name: row.name ?? 'Mağaza',
+    avatar: row.logo_url ? '' : (row.is_live ? '🔴' : '🏪'),
     totalSales: row.total_sales ?? 0,
     totalRevenue: row.total_revenue ?? 0,
-    growth: row.growth ?? 0,
-    rating: row.rating ?? profile?.rating ?? 0,
+    growth: 0,
+    rating: 0,
   };
 }
 
@@ -51,7 +49,7 @@ export default function Leaderboard() {
   // İlk yükleme
   useEffect(() => {
     async function fetchLeaderboard() {
-      const { data, error } = await getLeaderboard(7);
+      const { data, error } = await getLeaderboard(5);
       if (!error && data && data.length > 0) {
         setEntries(data.map((row, i) => mapRow(row, i + 1)));
       } else {
@@ -67,7 +65,7 @@ export default function Leaderboard() {
     let active = true;
     const channel = subscribeToLeaderboard(async () => {
       if (!active) return;
-      const { data, error } = await getLeaderboard(7);
+      const { data, error } = await getLeaderboard(5);
       if (!error && data && data.length > 0 && active) {
         setEntries(data.map((row, i) => mapRow(row, i + 1)));
       }
@@ -98,7 +96,7 @@ export default function Leaderboard() {
 
       {!loading && (
         <div className="space-y-2">
-          {entries.slice(0, 7).map((entry, i) => (
+          {entries.slice(0, 5).map((entry, i) => (
             <motion.div
               key={entry.id}
               layout
@@ -127,7 +125,7 @@ export default function Leaderboard() {
               </div>
               <div className="text-right shrink-0">
                 <p className="text-[#10B981] font-mono font-bold text-xs">{formatPrice(entry.totalRevenue)}</p>
-                <p className="text-[#5E7090] font-mono text-[9px]">{entry.totalSales} satış · ⭐{entry.rating.toFixed(1)}</p>
+                <p className="text-[#5E7090] font-mono text-[9px]">{entry.totalSales} satış</p>
               </div>
             </motion.div>
           ))}

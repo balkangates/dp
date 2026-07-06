@@ -92,6 +92,7 @@ export async function getActiveAuctions() {
     .select(`
       *,
       products (id, title, image_url, price, description, category, sector),
+      catalog_products (id, name, description, image_url, unit, unit_size, categories(name)),
       profiles:seller_id (full_name, company_name, avatar_url)
     `)
     .eq('status', 'active')
@@ -107,16 +108,19 @@ export async function getAuctionWithBids(auctionId: string) {
     .select(`
       *,
       products (id, title, image_url, price, description, category, sector),
+      catalog_products (id, name, description, image_url, unit, unit_size, categories(name)),
       profiles:seller_id (full_name, company_name, avatar_url)
     `)
     .eq('id', auctionId)
     .single();
 
+  // descending (toptan alım) ihalelerde en düşük teklif üstte, ascending'te en yüksek
+  const ascending = auction?.auction_type === 'descending';
   const { data: bids, error: bErr } = await supabase
     .from('auction_bids')
     .select('*, profiles:bidder_id (full_name, avatar_url)')
     .eq('auction_id', auctionId)
-    .order('amount', { ascending: false })
+    .order('amount', { ascending })
     .limit(20);
 
   return { auction, bids, error: aErr || bErr };
@@ -146,8 +150,8 @@ export function subscribeToAuction(
 // =====================================================
 // TEKLİF VER — auction_bids tablosuna
 // =====================================================
-export async function placeBid(auctionId: string, bidderId: string, amount: number) {
-  // 1) Teklifi kaydet
+export async function placeBid(auctionId: string, bidderId: string, amount: number, auctionType?: string | null) {
+  // 1) Teklifi kaydet (supplier-only kısıtı 'descending' ihalelerde DB tetikleyicisiyle zorlanıyor)
   const { data: bid, error: bidError } = await supabase
     .from('auction_bids')
     .insert({ auction_id: auctionId, bidder_id: bidderId, amount })
@@ -156,8 +160,9 @@ export async function placeBid(auctionId: string, bidderId: string, amount: numb
 
   if (bidError) return { data: null, error: bidError };
 
-  // 2) auctions tablosunu güncelle (current_bid, bid_count, winner_id)
-  const { error: auctionError } = await supabase
+  // 2) auctions tablosunu güncelle — descending'te DAHA DÜŞÜK teklif kazanır
+  const isDescending = auctionType === 'descending';
+  let query = supabase
     .from('auctions')
     .update({
       current_bid: amount,
@@ -165,10 +170,52 @@ export async function placeBid(auctionId: string, bidderId: string, amount: numb
       winner_id: bidderId,
       updated_at: new Date().toISOString(),
     })
-    .eq('id', auctionId)
-    .lt('current_bid', amount); // sadece daha yüksek teklif geçerli
+    .eq('id', auctionId);
+  query = isDescending ? query.gt('current_bid', amount) : query.lt('current_bid', amount);
+  const { error: auctionError } = await query;
 
   return { data: bid, error: auctionError };
+}
+
+/** Bayi, onaylı ürün kataloğundan (catalog_products) yeni bir toptan alım ihalesi başlatır.
+ *  auction_type='descending' — sadece tedarikçiler teklif verebilir (DB tetikleyicisi zorlar). */
+export async function startDescendingAuction(params: {
+  dealerId: string;
+  catalogProductId: string;
+  startPrice: number; // tavan fiyat — tedarikçiler bunun altına inmeye çalışır
+  quantity: string;
+  quantityUnit: string;
+  durationHours: number;
+}) {
+  const endTime = new Date(Date.now() + params.durationHours * 3600 * 1000).toISOString();
+  const { data, error } = await supabase
+    .from('auctions')
+    .insert({
+      catalog_product_id: params.catalogProductId,
+      seller_id: params.dealerId, // ihaleyi başlatan bayi
+      auction_type: 'descending',
+      start_price: params.startPrice,
+      current_bid: params.startPrice,
+      quantity: params.quantity,
+      quantity_unit: params.quantityUnit,
+      duration_hours: params.durationHours,
+      end_time: endTime,
+      status: 'active',
+    })
+    .select()
+    .single();
+  return { data, error };
+}
+
+/** Dealer'ın seçebileceği onaylı ürün listesi */
+export async function getApprovedCatalogProducts() {
+  const { data, error } = await supabase
+    .from('catalog_products')
+    .select('id, name, unit, unit_size, categories(name)')
+    .eq('is_approved', true)
+    .eq('is_active', true)
+    .order('name', { ascending: true });
+  return { data, error };
 }
 
 /** İhale süresini AUCTION_EXTEND_MINUTES kadar uzat (son dakika tekliflerinde) */
@@ -204,25 +251,22 @@ export async function getProducts(saleType?: string, sector?: string) {
 }
 
 // =====================================================
-// LİDERLİK TABLOSU — seller_stats tablosundan
+// LİDERLİK TABLOSU — store_leaderboard view'ından (bayi mağaza ciro sıralaması)
 // =====================================================
-export async function getLeaderboard(limit = 10) {
+export async function getLeaderboard(limit = 5) {
   const { data, error } = await supabase
-    .from('seller_stats')
-    .select(`
-      *,
-      profiles:seller_id (full_name, company_name, avatar_url, rating)
-    `)
+    .from('store_leaderboard')
+    .select('*')
     .order('total_revenue', { ascending: false })
     .limit(limit);
   return { data, error };
 }
 
-/** Realtime: seller_stats güncellemelerini dinle */
+/** Realtime: store_orders güncellemelerini dinle (leaderboard buna göre yenilenir) */
 export function subscribeToLeaderboard(callback: (payload: Record<string, unknown>) => void) {
   return supabase
     .channel(`leaderboard_${Date.now()}`)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'seller_stats' }, callback)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'store_orders' }, callback)
     .subscribe();
 }
 

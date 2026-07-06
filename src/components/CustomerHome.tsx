@@ -14,8 +14,9 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { getCurrentPosition, getNearestStores, type NearbyStore } from '../lib/geo';
-import { getStoreProducts, placeOrder, getMyOrders, getAllStores, type StoreProduct, type CartLine } from '../lib/dampingvar';
+import { getCurrentPosition, getNearestStores, getAllStores, type NearbyStore } from '../lib/geo';
+import { getStoreProducts, placeOrder, getMyOrders, getCategories, getProductVideo, type StoreProduct, type CartLine, type Category } from '../lib/dampingvar';
+import VideoPopupModal from './VideoPopupModal';
 
 const CARD = { background: '#131C2C', border: '1px solid #2A3650' };
 
@@ -94,22 +95,50 @@ function StoreSelector({ onSelect }: { onSelect: (store: NearbyStore) => void })
 }
 
 function ProductCard({ product, onAdd }: { product: StoreProduct; onAdd: (p: StoreProduct) => void }) {
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [loadingVideo, setLoadingVideo] = useState(false);
+
+  const openDetail = async () => {
+    setLoadingVideo(true);
+    try {
+      const v = await getProductVideo(product.id);
+      setVideoUrl(v?.video_url ?? null);
+    } finally {
+      setLoadingVideo(false);
+    }
+  };
+
   return (
     <div className="rounded-xl p-3" style={CARD}>
       {product.image_url && (
         <img src={product.image_url} alt={product.name} className="w-full h-28 object-cover rounded-lg mb-2" />
       )}
       <p className="text-white text-xs font-bold">{product.name} {product.unit_size}{product.unit}</p>
-      <div className="flex items-center justify-between mt-2">
+      {product.category_name && <p className="text-[#5E7090] text-[10px] font-mono">{product.category_name}</p>}
+      <div className="flex items-center justify-between mt-2 gap-2">
         <span className="text-[#D4AF37] font-mono font-extrabold text-sm">₺{product.price.toFixed(2)}</span>
-        <button
-          onClick={() => onAdd(product)}
-          className="rounded-lg px-3 py-1 text-xs font-extrabold"
-          style={{ background: 'linear-gradient(135deg,#D4AF37,#F5D76E)', color: '#000' }}
-        >
-          +
-        </button>
+        <div className="flex gap-1.5">
+          {product.has_video && (
+            <button
+              onClick={openDetail}
+              disabled={loadingVideo}
+              className="rounded-lg px-2.5 py-1 text-[10px] font-bold border border-[#2A3650] text-[#5E7090] hover:text-[#D4AF37] hover:border-[#D4AF37]/40"
+            >
+              {loadingVideo ? '…' : 'Detay'}
+            </button>
+          )}
+          <button
+            onClick={() => onAdd(product)}
+            className="rounded-lg px-3 py-1 text-xs font-extrabold"
+            style={{ background: 'linear-gradient(135deg,#D4AF37,#F5D76E)', color: '#000' }}
+          >
+            +
+          </button>
+        </div>
       </div>
+      {videoUrl && (
+        <VideoPopupModal videoUrl={videoUrl} title={product.name} onClose={() => setVideoUrl(null)} />
+      )}
     </div>
   );
 }
@@ -224,17 +253,23 @@ export default function CustomerHome() {
   const { user } = useAuth();
   const [selectedStore, setSelectedStore] = useState<NearbyStore | null>(null);
   const [products, setProducts] = useState<StoreProduct[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [cart, setCart] = useState<CartLine[]>([]);
   const [myOrders, setMyOrders] = useState<any[]>([]);
 
-  const loadProducts = useCallback(async (storeId: string) => {
-    const p = await getStoreProducts(storeId);
+  const loadProducts = useCallback(async (storeId: string, categoryId?: string) => {
+    const p = await getStoreProducts(storeId, categoryId);
     setProducts(p);
   }, []);
 
   useEffect(() => {
-    if (selectedStore) loadProducts(selectedStore.store_id);
-  }, [selectedStore, loadProducts]);
+    getCategories().then(setCategories).catch(() => setCategories([]));
+  }, []);
+
+  useEffect(() => {
+    if (selectedStore) loadProducts(selectedStore.store_id, activeCategory ?? undefined);
+  }, [selectedStore, activeCategory, loadProducts]);
 
   const refreshOrders = useCallback(async () => {
     if (!user) return;
@@ -267,7 +302,30 @@ export default function CustomerHome() {
 
       <div className="grid lg:grid-cols-[1fr_320px] gap-5">
         <div>
-          <p className="text-white font-extrabold text-sm mb-3">Ürünler</p>
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-white font-extrabold text-sm">Ürünler</p>
+          </div>
+          {categories.length > 0 && (
+            <div className="flex gap-1.5 overflow-x-auto no-scrollbar mb-3">
+              <button
+                onClick={() => setActiveCategory(null)}
+                className="px-3 py-1.5 rounded-lg text-[11px] font-bold whitespace-nowrap"
+                style={{ background: activeCategory === null ? '#D4AF37' : '#090d16', color: activeCategory === null ? '#000' : '#5E7090', border: '1px solid #2A3650' }}
+              >
+                Tümü
+              </button>
+              {categories.map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => setActiveCategory(c.id)}
+                  className="px-3 py-1.5 rounded-lg text-[11px] font-bold whitespace-nowrap"
+                  style={{ background: activeCategory === c.id ? '#D4AF37' : '#090d16', color: activeCategory === c.id ? '#000' : '#5E7090', border: '1px solid #2A3650' }}
+                >
+                  {c.icon ? `${c.icon} ` : ''}{c.name}
+                </button>
+              ))}
+            </div>
+          )}
           {products.length === 0 ? (
             <p className="text-[#5E7090] text-xs font-mono">Bu mağazada henüz ürün yok.</p>
           ) : (

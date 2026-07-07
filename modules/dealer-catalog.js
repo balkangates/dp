@@ -201,10 +201,10 @@ function renderCategoryBody(container, ctx, statusByCat) {
     </div>` : ''}
 
     <div class="table-wrap"><table>
-      <thead><tr><th>Ürün</th><th>Önerilen Fiyat</th><th>Seçim</th><th>Video</th></tr></thead>
+      <thead><tr><th>Ürün</th><th>Önerilen Fiyat</th><th>Seçim</th><th>Video</th><th>Toptan Alım</th></tr></thead>
       <tbody>
         ${catalog.length === 0
-          ? `<tr><td colspan="4" style="color:var(--muted);font-size:12px">Bu kategoride onaylı katalog ürünü yok.</td></tr>`
+          ? `<tr><td colspan="5" style="color:var(--muted);font-size:12px">Bu kategoride onaylı katalog ürünü yok.</td></tr>`
           : catalog.map(cp => {
             const mine = myProductFor(cp.id);
             return `<tr>
@@ -225,11 +225,41 @@ function renderCategoryBody(container, ctx, statusByCat) {
                         <input type="file" accept="video/*" class="dc-video-input" data-store-product="${mine.id}" style="display:none">
                       </label>`}
               </td>
+              <td>
+                <button class="btn btn-sm btn-ghost dc-start-auction" data-catalog="${cp.id}" data-name="${cp.name}" data-ceiling="${cp.suggested_price || 0}">
+                  <i class="fas fa-gavel"></i> İhale Başlat
+                </button>
+              </td>
             </tr>`;
           }).join('')}
       </tbody>
     </table></div>
   `;
+
+  // FAZ B — Toptan (azalan teklif) ihale başlat. Onaylı katalog ürününden
+  // start_wholesale_auction() RPC'sini çağırır (sadece dealer çağırabilir —
+  // DB tarafında da zorlanıyor). Kazananı SADECE tedarikçiler belirleyebilir
+  // (supplier_bids RLS'i bunu ayrıca garanti ediyor).
+  body.querySelectorAll('.dc-start-auction').forEach(btn => {
+    btn.onclick = async () => {
+      const qty = Number(prompt(`"${btn.dataset.name}" için toplam miktar:`, '100'));
+      if (!qty || qty <= 0) return;
+      const unit = prompt('Miktar birimi (kg, adet, koli...):', 'kg') || 'kg';
+      const ceiling = Number(prompt('Tavan birim fiyat (₺):', btn.dataset.ceiling) || 0);
+      if (!ceiling || ceiling <= 0) return alert('Geçerli bir tavan fiyat girin.');
+      const hours = Number(prompt('İhale kaç saat açık kalsın?', '48') || 48);
+
+      const { data, error } = await sb.rpc('start_wholesale_auction', {
+        p_catalog_product_id: btn.dataset.catalog,
+        p_quantity: qty,
+        p_quantity_unit: unit,
+        p_ceiling_price: ceiling,
+        p_hours_open: hours,
+      });
+      if (error) return alert('İhale başlatılamadı: ' + error.message);
+      alert('Toptan alım ihalesi başlatıldı. Tedarikçiler teklif verebilir.');
+    };
+  });
 
   body.querySelectorAll('.dc-select').forEach(btn => {
     btn.onclick = async () => {

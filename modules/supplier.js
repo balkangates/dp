@@ -99,6 +99,21 @@ async function proposeNewProduct(payload, container, ctx) {
   await render(container, ctx);
 }
 
+// Reddedilen bir ürüne yeni fiyat girip yeniden admin onayına gönderir.
+// RLS (v12 migration): supplier sadece KENDİ status='rejected' satırını
+// status='pending'e çekebilir — başka bir supplier'ın ya da zaten
+// onaylanmış bir ürünün fiyatını değiştiremez.
+async function resubmitPrice(catalogProductId, newPrice, container, ctx) {
+  const { error } = await sb.from('catalog_products')
+    .update({ suggested_price: newPrice, status: 'pending' })
+    .eq('id', catalogProductId)
+    .eq('supplier_id', myId);
+  if (error) { alert('Fiyat gönderilemedi: ' + error.message); return; }
+  myCatalogProducts = await fetchMyCatalogProducts();
+  activeTab = 'stock';
+  await render(container, ctx);
+}
+
 async function resolveShortfall(id, container, ctx) {
   if (!confirm('Bu eksik siparişi tamamladığınızı onaylıyor musunuz?')) return;
   const { error } = await sb.rpc('mark_shortfall_resolved', { p_id: id });
@@ -246,6 +261,31 @@ function renderProposeTab() {
   `;
 }
 
+// ═══ v12 — REDDEDİLEN ÜRÜNLER (yeniden fiyat gönderme) ═══════════════════
+function renderRejectedTab() {
+  const rejected = myCatalogProducts.filter(p => p.status === 'rejected');
+  if (rejected.length === 0) {
+    return `<div style="color:var(--muted);font-size:12px;padding:20px 0">Reddedilen ürününüz yok.</div>`;
+  }
+  return `<div class="table-wrap"><table>
+    <thead><tr><th>Ürün</th><th>Önceki Fiyat</th><th>Red Sebebi</th><th>Yeni Fiyat</th><th></th></tr></thead>
+    <tbody>
+      ${rejected.map(p => `
+        <tr>
+          <td>${p.name}</td>
+          <td class="font-mono" style="color:var(--muted)">₺${Number(p.suggested_price || 0).toLocaleString('tr-TR')}</td>
+          <td style="font-size:11px;color:var(--red)">${p.rejection_reason || '—'}</td>
+          <td>
+            <input type="number" min="0" step="0.01" class="resubmit-price-input" data-catalog="${p.id}"
+              placeholder="Yeni fiyat"
+              style="width:110px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px;border-radius:6px" />
+          </td>
+          <td><button class="btn btn-sm btn-gold" data-resubmit="${p.id}"><i class="fas fa-rotate-right"></i> Yeniden Gönder</button></td>
+        </tr>`).join('')}
+    </tbody>
+  </table></div>`;
+}
+
 // ═══ MODÜL 3.6 — EKSİK SİPARİŞLER ═══════════════════════════════════════
 async function renderShortfallsTab(container, ctx) {
   const shortfalls = await fetchMyShortfalls();
@@ -307,6 +347,7 @@ async function render(container, ctx) {
     { id: 'shipments', label: 'Sevkiyat Durumu', icon: 'fa-truck-fast' },
     { id: 'stock', label: 'Stok Yönetimi', icon: 'fa-warehouse' },
     { id: 'propose', label: 'Yeni Ürün Öner', icon: 'fa-plus' },
+    { id: 'rejected', label: 'Reddedilenler', icon: 'fa-rotate-left' },
     { id: 'shortfalls', label: 'Eksik Siparişler', icon: 'fa-triangle-exclamation' },
   ];
   const stats = await fetchSupplierStats();
@@ -337,6 +378,7 @@ async function render(container, ctx) {
   else if (activeTab === 'shipments') body.innerHTML = await renderShipmentsTab(ctx);
   else if (activeTab === 'stock') body.innerHTML = renderStockTab(container, ctx);
   else if (activeTab === 'propose') body.innerHTML = renderProposeTab();
+  else if (activeTab === 'rejected') body.innerHTML = renderRejectedTab();
   else body.innerHTML = await renderShortfallsTab(container, ctx);
 
   // Global köprüler — inline onclick'ten (tablo satırları dinamik olduğu için
@@ -368,6 +410,17 @@ async function render(container, ctx) {
       btn.onclick = () => {
         const input = body.querySelector(`.stock-input[data-variant="${btn.dataset.variant}"]`);
         updateVariantStock(btn.dataset.variant, Number(input.value), container, ctx);
+      };
+    });
+  }
+
+  if (activeTab === 'rejected') {
+    body.querySelectorAll('[data-resubmit]').forEach(btn => {
+      btn.onclick = () => {
+        const input = body.querySelector(`.resubmit-price-input[data-catalog="${btn.dataset.resubmit}"]`);
+        const price = Number(input?.value || 0);
+        if (!price || price <= 0) return alert('Geçerli bir yeni fiyat girin.');
+        resubmitPrice(btn.dataset.resubmit, price, container, ctx);
       };
     });
   }

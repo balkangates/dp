@@ -18,7 +18,7 @@ let sb = null;
 let activeTab = 'pending-catalog';
 
 async function fetchPendingCatalog() {
-  const { data } = await sb.from('catalog_products').select('*, categories(name)').eq('is_approved', false).order('created_at', { ascending: false });
+  const { data } = await sb.from('catalog_products').select('*, categories(name)').eq('status', 'pending').order('created_at', { ascending: false });
   return data || [];
 }
 async function fetchCategories() {
@@ -45,16 +45,20 @@ async function renderPendingCatalogTab(container, ctx) {
   const items = await fetchPendingCatalog();
   if (items.length === 0) return `<div style="color:var(--muted);font-size:12px;padding:20px 0">Onay bekleyen ürün yok.</div>`;
   return `<div class="table-wrap"><table>
-    <thead><tr><th>Ürün</th><th>Kategori</th><th>Tedarikçi Teklifi</th><th>İşlem</th></tr></thead>
+    <thead><tr><th>Ürün</th><th>Kategori</th><th>Tedarikçi Teklifi</th><th>Nihai Satış Fiyatı</th><th>İşlem</th></tr></thead>
     <tbody>
       ${items.map(p => `
         <tr>
           <td>${p.name}</td>
           <td>${p.categories?.name || '—'}</td>
-          <td class="font-mono">${fmtMoney(p.suggested_price)}</td>
+          <td class="font-mono" style="color:var(--muted)">${fmtMoney(p.suggested_price)}</td>
           <td>
-            <button class="btn btn-sm btn-green" onclick="window.__approveCatalog('${p.id}')"><i class="fas fa-check"></i> Onayla</button>
-            <button class="btn btn-sm btn-red" onclick="window.__rejectCatalog('${p.id}')"><i class="fas fa-xmark"></i> Reddet</button>
+            <input type="number" min="0" step="0.01" value="${p.suggested_price || 0}" class="final-price-input" data-catalog="${p.id}"
+              style="width:110px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px;border-radius:6px" />
+          </td>
+          <td>
+            <button class="btn btn-sm btn-green" data-approve="${p.id}"><i class="fas fa-check"></i> Onayla</button>
+            <button class="btn btn-sm btn-red" data-reject="${p.id}"><i class="fas fa-xmark"></i> Reddet</button>
           </td>
         </tr>`).join('')}
     </tbody>
@@ -150,14 +154,25 @@ async function render(container, ctx) {
   else if (activeTab === 'suggestions') body.innerHTML = await renderSuggestionsTab();
   else body.innerHTML = await renderEarningsTab();
 
-  window.__approveCatalog = async (id) => {
-    const { error } = await sb.from('catalog_products').update({ is_approved: true, is_active: true }).eq('id', id);
+  // Onayla: admin nihai satış fiyatını girer (supplier'ın önerisiyle aynı
+  // olabilir ya da değiştirilebilir) — status='approved' olunca
+  // sync_catalog_is_approved trigger'ı is_approved/is_active'i otomatik true yapar.
+  window.__approveCatalog = async (id, finalPrice) => {
+    const { error } = await sb.from('catalog_products')
+      .update({ status: 'approved', suggested_price: finalPrice, reviewed_by: ctx.user.id })
+      .eq('id', id);
     if (error) return alert('Onaylanamadı: ' + error.message);
     await render(container, ctx);
   };
+  // Reddet: SİLMEZ — supplier'ın yeniden fiyat girip gönderebilmesi için
+  // status='rejected' + sebep kaydedilir. Supplier kendi panelinden
+  // (rejected sekmesi) yeni fiyatla tekrar 'pending'e çekebilir.
   window.__rejectCatalog = async (id) => {
-    if (!confirm('Bu ürün önerisini reddetmek istediğinize emin misiniz? (silinecek)')) return;
-    const { error } = await sb.from('catalog_products').delete().eq('id', id);
+    const reason = prompt('Red sebebi (tedarikçi bu mesajı görecek):');
+    if (reason === null) return;
+    const { error } = await sb.from('catalog_products')
+      .update({ status: 'rejected', rejection_reason: reason, rejected_at: new Date().toISOString(), reviewed_by: ctx.user.id })
+      .eq('id', id);
     if (error) return alert('İşlem başarısız: ' + error.message);
     await render(container, ctx);
   };
@@ -173,6 +188,20 @@ async function render(container, ctx) {
     if (error) return alert('İşlem başarısız: ' + error.message);
     await render(container, ctx);
   };
+
+  if (activeTab === 'pending-catalog') {
+    body.querySelectorAll('[data-approve]').forEach(btn => {
+      btn.onclick = async () => {
+        const input = body.querySelector(`.final-price-input[data-catalog="${btn.dataset.approve}"]`);
+        const price = Number(input?.value || 0);
+        if (!price || price <= 0) return alert('Geçerli bir nihai satış fiyatı girin.');
+        await window.__approveCatalog(btn.dataset.approve, price);
+      };
+    });
+    body.querySelectorAll('[data-reject]').forEach(btn => {
+      btn.onclick = () => window.__rejectCatalog(btn.dataset.reject);
+    });
+  }
 
   if (activeTab === 'commission-rates') {
     body.querySelectorAll('.rate-save').forEach(btn => {

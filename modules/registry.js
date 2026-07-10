@@ -44,6 +44,7 @@ export function getModule(id) {
 }
 
 export function getModulesForRole(role) {
+  if (role === 'admin') return [...modules.values()];
   return [...modules.values()].filter(m => m.roles.includes(role));
 }
 
@@ -63,7 +64,14 @@ export function activateModule(id, container, ctx) {
   if (!mod) return false;
 
   const role = ctx?.profile?.role;
-  if (!Array.isArray(mod.roles) || !role || !mod.roles.includes(role)) {
+  const isAdmin = role === 'admin';
+  // ADMIN BYPASS: admin her modülü görebilir/açabilir, modülün kendi
+  // `roles` dizisinde 'admin' listelenmese bile. Bu, "admin hepsine
+  // yetkili olmalı" kararının TEK doğruluk kaynağı — yeni bir modül
+  // eklendiğinde her dosyaya 'admin' eklemeyi unutma riskini ortadan
+  // kaldırır (bkz. konuşma geçmişi: MENUS.admin + her modülün roles
+  // dizisi ayrı ayrı admin'i dışlıyordu).
+  if (!Array.isArray(mod.roles) || !role || (!isAdmin && !mod.roles.includes(role))) {
     console.warn(`[ModuleRegistry] "${role || 'bilinmeyen rol'}" için "${id}" modülüne erişim REDDEDİLDİ (izinli: ${mod.roles?.join(', ')})`);
     if (container) {
       container.innerHTML = `<div class="card" style="max-width:420px;margin:60px auto;text-align:center">

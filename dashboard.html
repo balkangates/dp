@@ -894,8 +894,13 @@ const MENUS = {
   ],
   // DEALER — eski adı "seller". B2B bayi: hem alabilir hem satabilir,
   // Dealer Core System (canlı satış, ürün seçimi, performans) burada.
+  // NOT (v12 kararı): "Ürün Ekle/Listele" sayfası BİLEREK kaldırıldı —
+  // bayi artık kendi ürününü/fiyatını giremez, sadece admin onaylı
+  // catalog_products'tan seçer ('dealer-catalog' sayfası, store_products'a
+  // yazar, fiyat DB trigger'ıyla kilitli). "Canlı İhale Aç" (auctions)
+  // BİLİNÇLİ OLARAK KALDI — mevcut çalışan ascending ihale bozulmuyor,
+  // sadece ürün seçimi içeride catalog_products/store_products'a bağlandı.
   dealer: [
-    { id: 'products',       icon: 'fa-boxes',            label: 'Ürün Ekle / Listele' },
     { id: 'live-sales',     icon: 'fa-video',            label: 'Canlı Satış' },
     { id: 'dealer-catalog', icon: 'fa-list-check',       label: 'Ürün Seçimi' },
     { id: 'dealer-performance', icon: 'fa-chart-line',   label: 'Performans' },
@@ -908,9 +913,14 @@ const MENUS = {
   supplier: [
     { id: 'supplier',       icon: 'fa-industry',         label: 'Tedarikçi Paneli' },
   ],
+  // NOT (v12 kararı): "admin hepsine yetkili" — aşağıdaki bayi/tedarikçi/
+  // franchise/müşteri sayfaları admin görsün diye eklendi. registry.js'teki
+  // activateModule() zaten admin bypass'ı yapıyor (modülün kendi `roles`
+  // dizisinde 'admin' yazmasa da izin verir) — bu liste sadece admin'in
+  // navigasyon menüsünde bu sayfaları GÖREBİLMESİ için.
   admin: [
     { id: 'catalog-admin',  icon: 'fa-truck-ramp-box',   label: 'Tedarik & Komisyon' },
-    { id: 'products',       icon: 'fa-boxes',            label: 'Ürünler' },
+    { id: 'products',       icon: 'fa-boxes',            label: 'Ürünler (Legacy)' },
     { id: 'auctions',       icon: 'fa-gavel',            label: 'İhaleler' },
     { id: 'auction-history',icon: 'fa-history',          label: 'İhale Geçmişi' },
     { id: 'orders',         icon: 'fa-shopping-cart',    label: 'Siparişler' },
@@ -919,6 +929,12 @@ const MENUS = {
     { id: 'accounting',     icon: 'fa-calculator',       label: 'Muhasebe' },
     { id: 'finance',        icon: 'fa-landmark',         label: 'Finans' },
     { id: 'trade-subs',     icon: 'fa-coins',            label: 'Abonelik Ödemeleri', sub: true, badgeKey: 'tradeSubsPending' },
+    { id: 'live-sales',         icon: 'fa-video',          label: 'Canlı Satış (Bayi Görünümü)' },
+    { id: 'dealer-catalog',     icon: 'fa-list-check',     label: 'Ürün Seçimi (Bayi)' },
+    { id: 'dealer-performance', icon: 'fa-chart-line',     label: 'Bayi Performansı' },
+    { id: 'supplier',           icon: 'fa-industry',       label: 'Tedarikçi Paneli' },
+    { id: 'franchise',          icon: 'fa-sitemap',        label: 'Franchise Paneli' },
+    { id: 'stores',             icon: 'fa-store',          label: 'Mağazalar (Müşteri Görünümü)' },
   ],
   logistics: [
     { id: 'orders',         icon: 'fa-shopping-cart',    label: 'Siparişler' },

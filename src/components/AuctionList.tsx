@@ -25,6 +25,7 @@ interface AuctionRow {
   auction_type: string | null;
   quantity: string | null;
   quantity_unit: string | null;
+  seller_id: string | null;
   products: {
     id: string;
     title: string;
@@ -205,6 +206,7 @@ export default function AuctionList({ activeId, onSelect }: AuctionListProps) {
         auction_type,
         quantity,
         quantity_unit,
+        seller_id,
         products (
           id,
           title,

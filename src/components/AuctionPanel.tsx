@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Bid, SIMULATED_USERS, formatPrice, formatTimer } from '../data';
 import { useAuth } from '../contexts/AuthContext';
-import { placeBid, subscribeToAuction, AUCTION_EXTEND_MINUTES } from '../lib/supabase';
+import { placeBid, subscribeToAuction, purchaseWholesaleAuction, AUCTION_EXTEND_MINUTES } from '../lib/supabase';
 import confetti from 'canvas-confetti';
 
 // Supabase ihale yapısı (App.tsx'den geliyor)
@@ -14,6 +14,7 @@ export interface SupabaseAuction {
   end_time: string;
   bid_increment: number;
   winner_id: string | null;
+  seller_id?: string | null; // descending ihalede: ihaleyi açan bayi
   status: string;
   extended_count: number;
   auction_type?: string | null;
@@ -78,7 +79,29 @@ export default function AuctionPanel({ auction, onBid, onAuctionEnd }: AuctionPa
   const [bidCount, setBidCount] = useState(norm.bidCount);
   const [isPlacingBid, setIsPlacingBid] = useState(false);
   const [bidError, setBidError] = useState<string | null>(null);
+  const [isPurchasing, setIsPurchasing] = useState(false);
+  const [purchaseError, setPurchaseError] = useState<string | null>(null);
+  const [purchaseDone, setPurchaseDone] = useState(false);
   const bidListRef = useRef<HTMLDivElement>(null);
+  // Descending (toptan) ihalede, ihaleyi açan bayi = auction.seller_id.
+  // Sadece o kişi, süre bittiğinde en düşük teklifi "Satın Al" ile
+  // zorunlu satın alma işlemini onaylayabilir.
+  const isAuctionOwner = !!user?.id && user.id === auction.seller_id;
+
+  const handlePurchase = useCallback(async () => {
+    setPurchaseError(null);
+    setIsPurchasing(true);
+    try {
+      const { error } = await purchaseWholesaleAuction(auction.id);
+      if (error) {
+        setPurchaseError('Satın alma işlemi tamamlanamadı: ' + error.message);
+        return;
+      }
+      setPurchaseDone(true);
+    } finally {
+      setIsPurchasing(false);
+    }
+  }, [auction.id]);
   const isRealAuction = !auction.id.startsWith('auc'); // data.ts'deki simüle id'ler 'auc' ile başlıyor
 
   // ─── Countdown ───────────────────────────────────────────────────────────
@@ -358,12 +381,39 @@ export default function AuctionPanel({ auction, onBid, onAuctionEnd }: AuctionPa
             className="absolute inset-0 bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center z-20 rounded-2xl"
           >
             <motion.div animate={{ rotate: [0, -10, 10, 0], scale: [1, 1.2, 1] }} transition={{ duration: 0.8, repeat: 2 }} className="text-5xl mb-3">🏆</motion.div>
-            <p className="text-[#D4AF37] font-mono text-sm font-bold">İHALE KAZANANI</p>
+            <p className="text-[#D4AF37] font-mono text-sm font-bold">{norm.isDescending ? 'EN DÜŞÜK TEKLİF' : 'İHALE KAZANANI'}</p>
             <p className="text-white font-black text-xl mt-1">👑 {leader}</p>
             <p className="text-[#10B981] font-mono font-bold text-lg mt-2">{formatPrice(currentPrice)}</p>
-            <button onClick={() => setShowWinner(false)} className="mt-4 px-6 py-2 rounded-lg bg-[#D4AF37] text-black font-bold text-sm cursor-pointer hover:bg-[#F5D76E] transition-colors">
-              Sonraki Lot →
-            </button>
+
+            {norm.isDescending && isRealAuction && isAuctionOwner && !purchaseDone && (
+              <>
+                <p className="text-[#5E7090] text-[10px] font-mono text-center mt-3 max-w-[240px]">
+                  En düşük teklifi veren tedarikçiden bu fiyattan satın almanız gerekiyor.
+                </p>
+                {purchaseError && (
+                  <p className="text-red-400 text-[10px] font-mono text-center mt-2 max-w-[240px]">{purchaseError}</p>
+                )}
+                <button
+                  onClick={handlePurchase}
+                  disabled={isPurchasing}
+                  className="mt-4 px-6 py-2 rounded-lg bg-[#10B981] text-black font-black text-sm cursor-pointer hover:bg-[#34D399] transition-colors disabled:opacity-50"
+                >
+                  {isPurchasing ? <><i className="fas fa-spinner fa-spin"></i> SATIN ALINIYOR</> : <><i className="fas fa-check"></i> SATIN AL</>}
+                </button>
+              </>
+            )}
+
+            {norm.isDescending && purchaseDone && (
+              <p className="text-[#10B981] font-mono text-xs font-bold mt-3">
+                <i className="fas fa-circle-check mr-1"></i> Sipariş oluşturuldu — escrow bloke edildi.
+              </p>
+            )}
+
+            {(!norm.isDescending || !isAuctionOwner || purchaseDone) && (
+              <button onClick={() => setShowWinner(false)} className="mt-4 px-6 py-2 rounded-lg bg-[#D4AF37] text-black font-bold text-sm cursor-pointer hover:bg-[#F5D76E] transition-colors">
+                Sonraki Lot →
+              </button>
+            )}
           </motion.div>
         )}
       </AnimatePresence>

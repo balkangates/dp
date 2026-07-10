@@ -218,6 +218,15 @@ export async function getApprovedCatalogProducts() {
   return { data, error };
 }
 
+/** Toptan (descending) ihale bitince, ihaleyi açan bayi en düşük teklifi
+ *  veren tedarikçiden ZORUNLU satın alma işlemini onaylar. Sipariş
+ *  public.orders'a yazılır (escrow/fatura zaten orders üzerine kurulu —
+ *  bkz. supabase_migration_v12_wholesale_purchase_and_approval_cycle.sql). */
+export async function purchaseWholesaleAuction(auctionId: string) {
+  const { data, error } = await supabase.rpc('purchase_wholesale_auction', { p_auction_id: auctionId });
+  return { data, error }; // data = yeni oluşturulan orders.id
+}
+
 /** İhale süresini AUCTION_EXTEND_MINUTES kadar uzat (son dakika tekliflerinde) */
 export async function extendAuction(auctionId: string, newEndTime: string) {
   const { error } = await supabase

@@ -13,10 +13,12 @@
  */
 
 import { registerModule } from './registry.js';
+import { Room, RoomEvent, Track } from 'livekit-client';
 
 let sb = null;
 let myId = null;
 let activeStoreId = null;
+let watchRoom = null; // LiveKit Room (izleyici/subscriber bağlantısı)
 
 async function fetchActiveStores() {
   const { data } = await sb.from('stores')
@@ -34,6 +36,36 @@ async function fetchStoreProducts(storeId) {
     .gt('stock_qty', 0)
     .order('name');
   return data || [];
+}
+
+// ── Öncelik 4: müşteri gerçek yayını izleyebilsin ────────────────────────
+// DIŞ BAĞIMLILIK: supabase/functions/live-token deploy edilmiş + LiveKit
+// projesi kurulmuş olmalı (bkz. o dosyanın kurulum notu). Fonksiyon
+// erişilemezse kullanıcıya net bir hata gösterilir, sayfa çökmez.
+async function connectWatchRoom(storeId, videoEl) {
+  const { data: sessionData } = await sb.auth.getSession();
+  const resp = await fetch(`${sb.supabaseUrl}/functions/v1/live-token`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${sessionData?.session?.access_token ?? ''}`,
+    },
+    body: JSON.stringify({ store_id: storeId }),
+  });
+  const payload = await resp.json();
+  if (!resp.ok) throw new Error(payload.error === 'STORE_NOT_LIVE' ? 'Yayın az önce sona ermiş olabilir.' : (payload.error || 'Bağlanılamadı'));
+
+  watchRoom = new Room();
+  watchRoom.on(RoomEvent.TrackSubscribed, (track) => {
+    if (track.kind === Track.Kind.Video || track.kind === Track.Kind.Audio) {
+      track.attach(videoEl);
+    }
+  });
+  await watchRoom.connect(payload.ws_url, payload.token);
+}
+
+function disconnectWatchRoom() {
+  if (watchRoom) { watchRoom.disconnect(); watchRoom = null; }
 }
 
 async function placeOrder(store, product, quantity, container, ctx) {
@@ -73,6 +105,12 @@ async function renderProducts(store, container, ctx) {
   body.innerHTML = `
     <button class="btn btn-ghost btn-sm" id="csBack" style="margin-bottom:12px"><i class="fas fa-arrow-left"></i> Mağazalara Dön</button>
     <div class="section-title" style="margin-bottom:12px">${store.name} ${store.is_live ? '<span class="tag tag-red" style="font-size:10px"><i class="fas fa-circle"></i> CANLI</span>' : ''}</div>
+    ${store.is_live ? `
+      <div class="card" style="margin-bottom:16px">
+        <video id="csWatchVideo" autoplay playsinline style="width:100%;max-height:360px;border-radius:10px;background:#000;object-fit:cover"></video>
+        <div id="csWatchStatus" style="font-size:11px;color:var(--muted);margin-top:6px"><i class="fas fa-spinner fa-spin"></i> Yayına bağlanılıyor…</div>
+      </div>
+    ` : ''}
     ${products.length === 0
       ? '<div style="color:var(--muted);font-size:12px;padding:20px 0">Bu mağazada şu an satılık ürün yok.</div>'
       : `<div class="grid-3">
@@ -89,7 +127,7 @@ async function renderProducts(store, container, ctx) {
         </div>`}
   `;
 
-  body.querySelector('#csBack').onclick = () => render(container, ctx);
+  body.querySelector('#csBack').onclick = () => { disconnectWatchRoom(); render(container, ctx); };
   body.querySelectorAll('.buy-btn').forEach(btn => {
     btn.onclick = () => {
       const product = products.find(p => p.id === btn.dataset.product);
@@ -99,6 +137,18 @@ async function renderProducts(store, container, ctx) {
       placeOrder(store, product, qty, container, ctx);
     };
   });
+
+  if (store.is_live) {
+    disconnectWatchRoom();
+    const videoEl = body.querySelector('#csWatchVideo');
+    const statusEl = body.querySelector('#csWatchStatus');
+    try {
+      await connectWatchRoom(store.id, videoEl);
+      if (statusEl) statusEl.innerHTML = '<i class="fas fa-circle" style="color:var(--red);font-size:8px"></i> Canlı yayın izleniyor';
+    } catch (e) {
+      if (statusEl) statusEl.innerHTML = `<i class="fas fa-triangle-exclamation" style="color:var(--red)"></i> Yayına bağlanılamadı: ${e.message}`;
+    }
+  }
 }
 
 async function render(container, ctx) {
@@ -141,5 +191,5 @@ registerModule({
     activeStoreId = null;
     await render(container, ctx);
   },
-  unmount() {},
+  unmount() { disconnectWatchRoom(); },
 });

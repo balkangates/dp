@@ -29,12 +29,36 @@
  */
 
 import { registerModule } from './registry.js';
+import { Room, Track } from 'livekit-client';
 
 let sb = null;
 let store = null;
 let dashboardStatus = null; // public.get_dealer_dashboard_status() sonucu
 let ordersChannel = null;
 let selectedProductId = null; // "canlıda anlatılan ürün" — üstte sabit kart
+let liveRoom = null; // LiveKit Room bağlantısı (sadece bu bayi yayın yaparken dolu)
+let localStream = null; // getUserMedia sonucu — render() her tetiklendiğinde yeniden istenmesin diye saklanıyor
+
+// Öncelik 1: order_status_enum'daki tek yönlü geçiş sırası. is_valid_order_transition()
+// DB'de zaten bunu zorluyor — burada sadece "bir sonraki mantıklı adım" ne, onu gösteriyoruz.
+const NEXT_STATUS = {
+  PAYMENT_PENDING: 'CONFIRMED',
+  CONFIRMED: 'PREPARING',
+  PREPARING: 'READY',
+  READY: 'SHIPPED',
+  SHIPPED: 'DELIVERED',
+  DELIVERED: 'COMPLETED',
+};
+const STATUS_LABEL = {
+  PAYMENT_PENDING: 'Ödeme Bekliyor',
+  CONFIRMED: 'Onaylandı',
+  PREPARING: 'Hazırlanıyor',
+  READY: 'Hazır',
+  SHIPPED: 'Kargoda',
+  DELIVERED: 'Teslim Edildi',
+  COMPLETED: 'Tamamlandı',
+  CANCELLED: 'İptal Edildi',
+};
 
 async function ensureStore(ctx) {
   const { data } = await sb.from('stores').select('*').eq('owner_id', ctx.profile.id).maybeSingle();
@@ -72,13 +96,20 @@ async function loadRecentOrders() {
   return data || [];
 }
 
-// ── Canlıya geç / bitir — GERÇEK RPC, sahte izleyici artışı yok ──────────
+// ── Canlıya geç / bitir — GERÇEK RPC + GERÇEK video yayını ───────────────
 async function toggleLive(ctx, container) {
   try {
     if (store.is_live) {
+      disconnectPublisherRoom();
       await sb.rpc('end_live_session', { p_store_id: store.id });
     } else {
       await sb.rpc('start_live_session', { p_store_id: store.id });
+      try {
+        await connectPublisherRoom();
+      } catch (videoErr) {
+        console.error('[live-sales] video bağlantısı kurulamadı:', videoErr);
+        alert('Canlı oturumu başladı ama video bağlantısı kurulamadı: ' + videoErr.message + '\n(Sipariş/kategori akışı yine de normal çalışır.)');
+      }
     }
   } catch (e) {
     // DB, DEALER_CANNOT_GO_LIVE: <reason> şeklinde net bir hata döner.
@@ -95,6 +126,59 @@ function explainBlockReason(message) {
   if (message.includes('NO_ACTIVE_CATEGORY')) return 'Canlıya geçmek için en az 1 AKTİF kategoriniz olmalı (kategori ürünlerinin en az %20\'sini seçmelisiniz).';
   if (message.includes('NO_VIDEO_PRODUCT')) return 'Canlıya geçmek için en az 1 videosu yüklenmiş, aktif ürününüz olmalı.';
   return 'Canlıya geçilemedi: ' + message;
+}
+
+// ── Öncelik 1: sipariş durumunu ilerlet / iptal et ───────────────────────
+// DB trigger'ı (v5) zaten geçersiz geçişleri reddediyor; burada sadece
+// "bir sonraki adım"ı sunuyoruz, hata durumunda DB'nin mesajını gösteriyoruz.
+async function advanceOrder(orderId, nextStatus, container, ctx) {
+  const { error } = await sb.from('store_orders').update({ status: nextStatus }).eq('id', orderId);
+  if (error) { alert('Durum güncellenemedi: ' + error.message); return; }
+  await render(container, ctx);
+}
+
+async function cancelOrder(orderId, container, ctx) {
+  if (!confirm('Bu siparişi iptal etmek istediğinize emin misiniz?')) return;
+  const { error } = await sb.from('store_orders').update({ status: 'CANCELLED' }).eq('id', orderId);
+  if (error) { alert('İptal edilemedi: ' + error.message); return; }
+  await render(container, ctx);
+}
+
+// ── Öncelik 4: gerçek video yayını (LiveKit) ─────────────────────────────
+// DIŞ BAĞIMLILIK: bir LiveKit Cloud projesi + supabase/functions/live-token
+// deploy edilmiş olmalı (bkz. o dosyanın başındaki kurulum notu). Bu
+// olmadan aşağıdaki fetch 500/hata döner ve video başlamaz — canlıya
+// geçiş gating'i (can_store_go_live) yine de normal çalışmaya devam eder.
+async function connectPublisherRoom() {
+  const { data: sessionData } = await sb.auth.getSession();
+  const resp = await fetch(`${sb.supabaseUrl}/functions/v1/live-token`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${sessionData?.session?.access_token ?? ''}`,
+    },
+    body: JSON.stringify({ store_id: store.id }),
+  });
+  const payload = await resp.json();
+  if (!resp.ok) throw new Error(payload.error || 'Yayın token alınamadı');
+
+  liveRoom = new Room();
+  await liveRoom.connect(payload.ws_url, payload.token);
+
+  const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+  localStream = stream;
+  const videoTrack = stream.getVideoTracks()[0];
+  const audioTrack = stream.getAudioTracks()[0];
+  if (videoTrack) await liveRoom.localParticipant.publishTrack(videoTrack, { source: Track.Source.Camera });
+  if (audioTrack) await liveRoom.localParticipant.publishTrack(audioTrack, { source: Track.Source.Microphone });
+
+  const el = document.getElementById('lsSelfPreview');
+  if (el) { el.srcObject = stream; el.play().catch(() => {}); }
+}
+
+function disconnectPublisherRoom() {
+  if (liveRoom) { liveRoom.disconnect(); liveRoom = null; }
+  if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
 }
 
 function renderNoStore(container, ctx) {
@@ -194,6 +278,10 @@ async function render(container, ctx) {
     ${missingVideo > 0 ? `<div class="card" style="margin-bottom:12px;border:1px solid var(--red);color:var(--red);font-size:12px"><i class="fas fa-triangle-exclamation"></i> ${missingVideo} ürününüzde henüz sunum videosu yok — bu ürünler canlıda gösterilemez ve satılamaz.</div>` : ''}
 
     ${isLive ? `
+    <div class="card" style="margin-bottom:16px">
+      <video id="lsSelfPreview" muted autoplay playsinline style="width:100%;max-height:280px;border-radius:10px;background:#000;object-fit:cover"></video>
+      <div style="font-size:10px;color:var(--muted);margin-top:6px"><i class="fas fa-broadcast-tower"></i> Bu, izleyicilerin gördüğü canlı yayının kendi önizlemenizdir.</div>
+    </div>
     <div class="grid-3" style="margin-bottom:16px">
       <div class="stat-card"><div class="stat-icon" style="background:rgba(239,68,68,.15);color:var(--red)"><i class="fas fa-circle" style="font-size:10px"></i></div><div><div class="stat-label">DURUM</div><div class="stat-value" style="font-size:13px;color:var(--red)">CANLI</div></div></div>
       <div class="stat-card"><div class="stat-icon" style="background:rgba(16,185,129,.15);color:var(--green)"><i class="fas fa-shopping-cart"></i></div><div><div class="stat-label">GÜNCEL SİPARİŞ</div><div class="stat-value">${orders.length}</div></div></div>
@@ -246,17 +334,40 @@ async function render(container, ctx) {
     row.onclick = () => { selectedProductId = row.dataset.id; render(container, ctx); };
   });
 
+  // Realtime tetiklemeli yeniden render, video elementini sıfırlıyor —
+  // kamerayı yeniden istemeden mevcut stream'i geri bağla.
+  if (isLive && localStream) {
+    const previewEl = container.querySelector('#lsSelfPreview');
+    if (previewEl) { previewEl.srcObject = localStream; previewEl.play().catch(() => {}); }
+  }
+
+  container.querySelectorAll('.order-advance-btn').forEach(btn => {
+    btn.onclick = () => advanceOrder(btn.dataset.order, btn.dataset.next, container, ctx);
+  });
+  container.querySelectorAll('.order-cancel-btn').forEach(btn => {
+    btn.onclick = () => cancelOrder(btn.dataset.order, container, ctx);
+  });
+
   subscribeToOrders(container, ctx);
 }
 
 function renderOrderRow(order) {
   const itemsSummary = (order.store_order_items || []).map(i => `${i.quantity}× ${i.product_name}`).join(', ');
+  const next = NEXT_STATUS[order.status];
+  const canCancel = !['DELIVERED', 'COMPLETED', 'CANCELLED'].includes(order.status);
   return `<div class="card-sm" style="margin-bottom:8px">
     <div style="display:flex;justify-content:space-between;align-items:center">
       <span style="font-size:12px;font-weight:700">${itemsSummary || 'Sipariş'}</span>
       <span class="tag tag-green" style="font-size:10px">₺${Number(order.total_amount).toLocaleString('tr-TR')}</span>
     </div>
     <div style="font-size:10px;color:var(--muted);margin-top:4px">${new Date(order.created_at).toLocaleTimeString('tr-TR')} — Sipariş alındı, teşekkürler! 🎉</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">
+      <span class="tag" style="font-size:10px">${STATUS_LABEL[order.status] || order.status}</span>
+      <div style="display:flex;gap:6px">
+        ${canCancel ? `<button class="btn btn-sm btn-ghost order-cancel-btn" data-order="${order.id}"><i class="fas fa-xmark"></i></button>` : ''}
+        ${next ? `<button class="btn btn-sm btn-gold order-advance-btn" data-order="${order.id}" data-next="${next}">${STATUS_LABEL[next]} <i class="fas fa-arrow-right"></i></button>` : ''}
+      </div>
+    </div>
   </div>`;
 }
 
@@ -266,6 +377,8 @@ function subscribeToOrders(container, ctx) {
   ordersChannel = sb
     .channel(`store-orders-${store.id}`)
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'store_orders', filter: `store_id=eq.${store.id}` },
+      () => { render(container, ctx); })
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'store_orders', filter: `store_id=eq.${store.id}` },
       () => { render(container, ctx); })
     .subscribe();
 }
@@ -283,5 +396,6 @@ registerModule({
   },
   unmount() {
     if (ordersChannel) { sb.removeChannel(ordersChannel); ordersChannel = null; }
+    disconnectPublisherRoom();
   },
 });

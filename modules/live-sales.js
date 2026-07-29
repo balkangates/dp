@@ -29,6 +29,7 @@
  */
 
 import { registerModule } from './registry.js';
+import { getYoutubeEmbedUrl } from './youtube-utils.js';
 import { Room, Track } from 'livekit-client';
 
 let sb = null;
@@ -124,7 +125,7 @@ async function toggleLive(ctx, container) {
 function explainBlockReason(message) {
   if (message.includes('SUSPENDED')) return 'Bayiliğiniz askıya alındığı için canlıya geçemezsiniz.';
   if (message.includes('NO_ACTIVE_CATEGORY')) return 'Canlıya geçmek için en az 1 AKTİF kategoriniz olmalı (kategori ürünlerinin en az %20\'sini seçmelisiniz).';
-  if (message.includes('NO_VIDEO_PRODUCT')) return 'Canlıya geçmek için en az 1 videosu yüklenmiş, aktif ürününüz olmalı.';
+  if (message.includes('NO_VIDEO_PRODUCT')) return 'Canlıya geçmek için en az 1 ürününüze YouTube tanıtım video linki eklemiş olmalısınız.';
   return 'Canlıya geçilemedi: ' + message;
 }
 
@@ -275,7 +276,7 @@ async function render(container, ctx) {
       </button>
     </div>
 
-    ${missingVideo > 0 ? `<div class="card" style="margin-bottom:12px;border:1px solid var(--red);color:var(--red);font-size:12px"><i class="fas fa-triangle-exclamation"></i> ${missingVideo} ürününüzde henüz sunum videosu yok — bu ürünler canlıda gösterilemez ve satılamaz.</div>` : ''}
+    ${missingVideo > 0 ? `<div class="card" style="margin-bottom:12px;border:1px solid var(--red);color:var(--red);font-size:12px"><i class="fas fa-triangle-exclamation"></i> ${missingVideo} ürününüzde henüz YouTube tanıtım video linki yok — bu ürünler canlıda gösterilemez ve satılamaz. "Ürün Seçimi" sayfasından ekleyebilirsiniz.</div>` : ''}
 
     ${isLive ? `
     <div class="card" style="margin-bottom:16px">
@@ -297,7 +298,7 @@ async function render(container, ctx) {
           ? `<div style="color:var(--muted);font-size:12px;padding:16px 0">Vitrinde aktif (videolu) ürün yok.</div>`
           : activeProducts.map(p => `
             <div class="card-sm ls-product-row" data-id="${p.id}" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;cursor:pointer;${selected?.id === p.id ? 'border-color:var(--gold)' : ''}">
-              <span style="font-size:12px;font-weight:600">${p.name} ${!p.has_video ? '<i class="fas fa-triangle-exclamation" style="color:var(--red)" title="Video yok"></i>' : ''}</span>
+              <span style="font-size:12px;font-weight:600">${p.name} ${!p.has_video ? '<i class="fas fa-triangle-exclamation" style="color:var(--red)" title="YouTube linki yok"></i>' : ''}</span>
               <span style="font-size:12px;color:var(--gold);font-family:'Courier New',monospace">₺${Number(p.price).toLocaleString('tr-TR')}</span>
             </div>`).join('')}
       </div>
@@ -309,10 +310,7 @@ async function render(container, ctx) {
             <div class="card-sm" style="margin-bottom:10px">
               <div style="font-weight:700;font-size:13px;margin-bottom:4px">${selected.name}</div>
               <div style="font-size:12px;color:var(--gold);font-family:'Courier New',monospace;margin-bottom:8px">₺${Number(selected.price).toLocaleString('tr-TR')}</div>
-              ${!isLive && selected.product_videos?.length ? `
-                <video src="${selected.product_videos[selected.product_videos.length - 1].video_url}" controls style="width:100%;border-radius:8px;max-height:200px" poster=""></video>
-                <div style="font-size:10px;color:var(--muted);margin-top:6px"><i class="fas fa-circle-play"></i> Offline mod — son canlı sunum videosu oynatılıyor.</div>
-              ` : ''}
+              ${!isLive && selected.product_videos?.length ? renderOfflineVideo(selected.product_videos[selected.product_videos.length - 1]) : ''}
             </div>
           </div>
         ` : `<div style="color:var(--muted);font-size:12px">Ürün seçmek için soldaki listeden birine tıklayın.</div>`}
@@ -349,6 +347,26 @@ async function render(container, ctx) {
   });
 
   subscribeToOrders(container, ctx);
+}
+
+// Tanıtım videosu artık bir YouTube linki (bkz. modules/dealer-catalog.js) —
+// bu yüzden offline modda <video src="..."> yerine YouTube iframe embed
+// kullanıyoruz. Eskiden Storage'a yüklenmiş (source: 'upload'/'live_recording')
+// bir kayıt varsa (youtube linki değilse) geriye dönük uyumluluk için yine
+// doğrudan <video> etiketiyle oynatılır.
+function renderOfflineVideo(video) {
+  const embedUrl = getYoutubeEmbedUrl(video.video_url);
+  const player = embedUrl
+    ? `<div style="position:relative;padding-top:56.25%;border-radius:8px;overflow:hidden">
+         <iframe src="${embedUrl}" title="Ürün tanıtım videosu" frameborder="0"
+           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+           allowfullscreen style="position:absolute;top:0;left:0;width:100%;height:100%"></iframe>
+       </div>`
+    : `<video src="${video.video_url}" controls style="width:100%;border-radius:8px;max-height:200px" poster=""></video>`;
+  return `
+    ${player}
+    <div style="font-size:10px;color:var(--muted);margin-top:6px"><i class="fas fa-circle-play"></i> Offline mod — bayinin YouTube tanıtım videosu gösteriliyor.</div>
+  `;
 }
 
 function renderOrderRow(order) {

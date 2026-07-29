@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 // =====================================================
 // SUPABASE
 // =====================================================
-const SUPABASE_URL = 'https://slajjrtfwncwlglhwhzg.supabase.co';
+export const SUPABASE_URL = 'https://slajjrtfwncwlglhwhzg.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNsYWpqcnRmd25jd2xnbGh3aHpnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkwNzYzMTEsImV4cCI6MjA5NDY1MjMxMX0.krwWYXRQS7JhU9T5WRdsW2CRdefFJPSUCmJsLKAL0H8';
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
@@ -404,4 +404,34 @@ export async function updateActiveUser(userId: string) {
     .from('active_users')
     .upsert({ user_id: userId, last_active: new Date().toISOString(), is_active: true });
   return { error };
+}
+
+// =====================================================
+// BAYİYE ÖZEL CANLI YAYIN — LiveKit izleyici token'ı
+// =====================================================
+// Bayi tarafı (dashboard.html → modules/live-sales.js) kamerasını
+// LiveKit'e "store-<store_id>" adlı bir odaya yayınlıyor (stores.is_live
+// true olduğunda). Müşteri seçtiği mağaza canlıdaysa aynı odaya SADECE
+// İZLEYİCİ (canPublish=false) olarak katılır — Supabase Edge Function
+// 'live-token' rolüne göre publisher/viewer token'ı üretir.
+export interface LiveViewerToken {
+  token: string;
+  ws_url: string;
+  room: string;
+}
+
+export async function getLiveViewerToken(storeId: string): Promise<LiveViewerToken> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const resp = await fetch(`${SUPABASE_URL}/functions/v1/live-token`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${sessionData?.session?.access_token ?? SUPABASE_ANON_KEY}`,
+      apikey: SUPABASE_ANON_KEY,
+    },
+    body: JSON.stringify({ store_id: storeId, role: 'viewer' }),
+  });
+  const payload = await resp.json();
+  if (!resp.ok) throw new Error(payload.error || 'Yayın izleme token’ı alınamadı');
+  return payload as LiveViewerToken;
 }

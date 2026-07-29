@@ -29,12 +29,16 @@
  */
 
 import { registerModule } from './registry.js';
+import { getYoutubeEmbedUrl } from './youtube-utils.js';
+import { Room, Track } from 'livekit-client';
 
 let sb = null;
 let store = null;
 let dashboardStatus = null; // public.get_dealer_dashboard_status() sonucu
 let ordersChannel = null;
 let selectedProductId = null; // "canlıda anlatılan ürün" — üstte sabit kart
+let liveRoom = null;   // LiveKit Room bağlantısı (sadece bu bayi yayın yaparken dolu)
+let localStream = null; // getUserMedia sonucu — render() her tetiklendiğinde yeniden istenmesin diye saklanıyor
 
 async function ensureStore(ctx) {
   const { data } = await sb.from('stores').select('*').eq('owner_id', ctx.profile.id).maybeSingle();
@@ -72,13 +76,20 @@ async function loadRecentOrders() {
   return data || [];
 }
 
-// ── Canlıya geç / bitir — GERÇEK RPC, sahte izleyici artışı yok ──────────
+// ── Canlıya geç / bitir — GERÇEK RPC + GERÇEK video yayını (LiveKit) ─────
 async function toggleLive(ctx, container) {
   try {
     if (store.is_live) {
       await sb.rpc('end_live_session', { p_store_id: store.id });
+      disconnectPublisherRoom();
     } else {
       await sb.rpc('start_live_session', { p_store_id: store.id });
+      try {
+        await connectPublisherRoom();
+      } catch (videoErr) {
+        console.error('[live-sales] video bağlantısı kurulamadı:', videoErr);
+        alert('Canlı oturumu başladı ama kamera/video bağlantısı kurulamadı: ' + videoErr.message + '\n(Müşteriler yine mağazanızı canlı görür, sipariş akışı normal çalışır — sadece görüntü gitmez.)');
+      }
     }
   } catch (e) {
     // DB, DEALER_CANNOT_GO_LIVE: <reason> şeklinde net bir hata döner.
@@ -90,10 +101,46 @@ async function toggleLive(ctx, container) {
   await refreshAndRender(container, ctx);
 }
 
+// DIŞ BAĞIMLILIK: bir LiveKit Cloud projesi + supabase/functions/live-token
+// deploy edilmiş olmalı. Bu olmadan aşağıdaki fetch hata döner ve kamera
+// görüntüsü gitmez — canlıya geçiş gating'i (can_store_go_live) yine de
+// normal çalışmaya devam eder, sadece müşteri tarafında görüntü olmaz.
+async function connectPublisherRoom() {
+  const { data: sessionData } = await sb.auth.getSession();
+  const resp = await fetch(`${sb.supabaseUrl}/functions/v1/live-token`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${sessionData?.session?.access_token ?? ''}`,
+    },
+    body: JSON.stringify({ store_id: store.id }),
+  });
+  const payload = await resp.json();
+  if (!resp.ok) throw new Error(payload.error || 'Yayın token alınamadı');
+
+  liveRoom = new Room();
+  await liveRoom.connect(payload.ws_url, payload.token);
+
+  const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+  localStream = stream;
+  const videoTrack = stream.getVideoTracks()[0];
+  const audioTrack = stream.getAudioTracks()[0];
+  if (videoTrack) await liveRoom.localParticipant.publishTrack(videoTrack, { source: Track.Source.Camera });
+  if (audioTrack) await liveRoom.localParticipant.publishTrack(audioTrack, { source: Track.Source.Microphone });
+
+  const el = document.getElementById('lsSelfPreview');
+  if (el) { el.srcObject = stream; el.play().catch(() => {}); }
+}
+
+function disconnectPublisherRoom() {
+  if (liveRoom) { liveRoom.disconnect(); liveRoom = null; }
+  if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
+}
+
 function explainBlockReason(message) {
   if (message.includes('SUSPENDED')) return 'Bayiliğiniz askıya alındığı için canlıya geçemezsiniz.';
   if (message.includes('NO_ACTIVE_CATEGORY')) return 'Canlıya geçmek için en az 1 AKTİF kategoriniz olmalı (kategori ürünlerinin en az %20\'sini seçmelisiniz).';
-  if (message.includes('NO_VIDEO_PRODUCT')) return 'Canlıya geçmek için en az 1 videosu yüklenmiş, aktif ürününüz olmalı.';
+  if (message.includes('NO_VIDEO_PRODUCT')) return 'Canlıya geçmek için en az 1 ürününüze YouTube tanıtım video linki eklemiş olmalısınız.';
   return 'Canlıya geçilemedi: ' + message;
 }
 
@@ -191,9 +238,13 @@ async function render(container, ctx) {
       </button>
     </div>
 
-    ${missingVideo > 0 ? `<div class="card" style="margin-bottom:12px;border:1px solid var(--red);color:var(--red);font-size:12px"><i class="fas fa-triangle-exclamation"></i> ${missingVideo} ürününüzde henüz sunum videosu yok — bu ürünler canlıda gösterilemez ve satılamaz.</div>` : ''}
+    ${missingVideo > 0 ? `<div class="card" style="margin-bottom:12px;border:1px solid var(--red);color:var(--red);font-size:12px"><i class="fas fa-triangle-exclamation"></i> ${missingVideo} ürününüzde henüz YouTube tanıtım video linki yok — bu ürünler canlıda gösterilemez ve satılamaz. "Ürün Seçimi" sayfasından ekleyebilirsiniz.</div>` : ''}
 
     ${isLive ? `
+    <div class="card" style="margin-bottom:16px">
+      <video id="lsSelfPreview" muted autoplay playsinline style="width:100%;max-height:280px;border-radius:10px;background:#000;object-fit:cover"></video>
+      <div style="font-size:10px;color:var(--muted);margin-top:6px"><i class="fas fa-broadcast-tower"></i> Bu, izleyicilerin gördüğü canlı yayının kendi önizlemenizdir.</div>
+    </div>
     <div class="grid-3" style="margin-bottom:16px">
       <div class="stat-card"><div class="stat-icon" style="background:rgba(239,68,68,.15);color:var(--red)"><i class="fas fa-circle" style="font-size:10px"></i></div><div><div class="stat-label">DURUM</div><div class="stat-value" style="font-size:13px;color:var(--red)">CANLI</div></div></div>
       <div class="stat-card"><div class="stat-icon" style="background:rgba(16,185,129,.15);color:var(--green)"><i class="fas fa-shopping-cart"></i></div><div><div class="stat-label">GÜNCEL SİPARİŞ</div><div class="stat-value">${orders.length}</div></div></div>
@@ -209,7 +260,7 @@ async function render(container, ctx) {
           ? `<div style="color:var(--muted);font-size:12px;padding:16px 0">Vitrinde aktif (videolu) ürün yok.</div>`
           : activeProducts.map(p => `
             <div class="card-sm ls-product-row" data-id="${p.id}" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;cursor:pointer;${selected?.id === p.id ? 'border-color:var(--gold)' : ''}">
-              <span style="font-size:12px;font-weight:600">${p.name} ${!p.has_video ? '<i class="fas fa-triangle-exclamation" style="color:var(--red)" title="Video yok"></i>' : ''}</span>
+              <span style="font-size:12px;font-weight:600">${p.name} ${!p.has_video ? '<i class="fas fa-triangle-exclamation" style="color:var(--red)" title="YouTube linki yok"></i>' : ''}</span>
               <span style="font-size:12px;color:var(--gold);font-family:'Courier New',monospace">₺${Number(p.price).toLocaleString('tr-TR')}</span>
             </div>`).join('')}
       </div>
@@ -221,10 +272,7 @@ async function render(container, ctx) {
             <div class="card-sm" style="margin-bottom:10px">
               <div style="font-weight:700;font-size:13px;margin-bottom:4px">${selected.name}</div>
               <div style="font-size:12px;color:var(--gold);font-family:'Courier New',monospace;margin-bottom:8px">₺${Number(selected.price).toLocaleString('tr-TR')}</div>
-              ${!isLive && selected.product_videos?.length ? `
-                <video src="${selected.product_videos[selected.product_videos.length - 1].video_url}" controls style="width:100%;border-radius:8px;max-height:200px" poster=""></video>
-                <div style="font-size:10px;color:var(--muted);margin-top:6px"><i class="fas fa-circle-play"></i> Offline mod — son canlı sunum videosu oynatılıyor.</div>
-              ` : ''}
+              ${!isLive && selected.product_videos?.length ? renderOfflineVideo(selected.product_videos[selected.product_videos.length - 1]) : ''}
             </div>
           </div>
         ` : `<div style="color:var(--muted);font-size:12px">Ürün seçmek için soldaki listeden birine tıklayın.</div>`}
@@ -246,7 +294,34 @@ async function render(container, ctx) {
     row.onclick = () => { selectedProductId = row.dataset.id; render(container, ctx); };
   });
 
+  // Realtime tetiklemeli yeniden render, video elementini sıfırlıyor —
+  // kamerayı yeniden istemeden mevcut stream'i geri bağla.
+  if (isLive && localStream) {
+    const previewEl = container.querySelector('#lsSelfPreview');
+    if (previewEl) { previewEl.srcObject = localStream; previewEl.play().catch(() => {}); }
+  }
+
   subscribeToOrders(container, ctx);
+}
+
+// Tanıtım videosu artık bir YouTube linki (bkz. modules/dealer-catalog.js) —
+// bu yüzden offline modda <video src="..."> yerine YouTube iframe embed
+// kullanıyoruz. Eskiden Storage'a yüklenmiş (source: 'upload'/'live_recording')
+// bir kayıt varsa (youtube linki değilse) geriye dönük uyumluluk için yine
+// doğrudan <video> etiketiyle oynatılır.
+function renderOfflineVideo(video) {
+  const embedUrl = getYoutubeEmbedUrl(video.video_url);
+  const player = embedUrl
+    ? `<div style="position:relative;padding-top:56.25%;border-radius:8px;overflow:hidden">
+         <iframe src="${embedUrl}" title="Ürün tanıtım videosu" frameborder="0"
+           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+           allowfullscreen style="position:absolute;top:0;left:0;width:100%;height:100%"></iframe>
+       </div>`
+    : `<video src="${video.video_url}" controls style="width:100%;border-radius:8px;max-height:200px" poster=""></video>`;
+  return `
+    ${player}
+    <div style="font-size:10px;color:var(--muted);margin-top:6px"><i class="fas fa-circle-play"></i> Offline mod — bayinin YouTube tanıtım videosu gösteriliyor.</div>
+  `;
 }
 
 function renderOrderRow(order) {
@@ -283,5 +358,6 @@ registerModule({
   },
   unmount() {
     if (ordersChannel) { sb.removeChannel(ordersChannel); ordersChannel = null; }
+    disconnectPublisherRoom();
   },
 });

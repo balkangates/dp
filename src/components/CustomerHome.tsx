@@ -17,6 +17,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { getCurrentPosition, getNearestStores, getAllStores, type NearbyStore } from '../lib/geo';
 import { getStoreProducts, placeOrder, getMyOrders, getCategories, getProductVideo, getStoreActiveAuctions, type StoreProduct, type CartLine, type Category, type StoreWholesaleAuction } from '../lib/dampingvar';
 import VideoPopupModal from './VideoPopupModal';
+import StoreLiveViewer from './StoreLiveViewer';
 
 function timeLeft(endTime: string) {
   const ms = new Date(endTime).getTime() - Date.now();
@@ -360,6 +361,12 @@ export default function CustomerHome() {
         ← Mağaza değiştir
       </button>
       <h2 className="text-white font-black text-xl">{selectedStore.name}</h2>
+
+      <StoreLiveViewer
+        storeId={selectedStore.store_id}
+        storeName={selectedStore.name}
+        initialIsLive={selectedStore.is_live}
+      />
 
       <div className="grid lg:grid-cols-[1fr_320px] gap-5">
         <div>

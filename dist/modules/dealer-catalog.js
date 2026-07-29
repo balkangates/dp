@@ -18,6 +18,7 @@
  */
 
 import { registerModule } from './registry.js';
+import { getYoutubeEmbedUrl } from './youtube-utils.js';
 
 let sb = null;
 let store = null;
@@ -25,7 +26,8 @@ let categories = [];
 let catalogByCategory = new Map(); // category_id -> catalog_products[]
 let myProducts = [];               // store_products (+catalog_product_id)
 let activeCategoryId = null;
-let uploadingId = null;
+let savingLinkId = null;    // YouTube linki kaydedilirken (RPC/insert sırasında) hangi store_product
+let linkFormOpenId = null;  // hangi store_product için inline link formu açık
 
 async function ensureStore(ctx) {
   const { data } = await sb.from('stores').select('*').eq('owner_id', ctx.profile.id).maybeSingle();
@@ -98,29 +100,49 @@ async function proposeProduct(payload) {
   return true;
 }
 
-async function uploadVideo(storeProductId, file, container, ctx) {
-  uploadingId = storeProductId;
+// ── Tanıtım videosu — YouTube linki ───────────────────────────────────────
+// Önceden burada Supabase Storage'a ('dealer-videos' bucket) dosya
+// yükleniyordu; bucket kurulmadığı/yanlış yapılandırıldığı için yükleme
+// hep sessizce başarısız oluyor, has_video hiç true olmuyor, bu yüzden
+// "Canlıya Geç" DB tarafında NO_VIDEO_PRODUCT ile sürekli reddediliyordu.
+// Artık bayi kendi YouTube kanalındaki tanıtım videosunun LİNKİNİ giriyor —
+// dosya yükleme yok, Storage'a hiç ihtiyaç yok (v10 migration'ın asıl
+// amacı da buydu, product_videos.source zaten 'youtube' değerini kabul
+// ediyor). has_video, aynı DB trigger'ı ile otomatik senkron kalır.
+async function addYoutubeLink(storeProductId, rawUrl, container, ctx) {
+  const url = (rawUrl || '').trim();
+  const embed = getYoutubeEmbedUrl(url);
+  if (!embed) {
+    alert('Geçerli bir YouTube video linki girin.\nÖrnek: https://www.youtube.com/watch?v=XXXXXXXXXXX veya https://youtu.be/XXXXXXXXXXX');
+    return;
+  }
+  savingLinkId = storeProductId;
+  linkFormOpenId = null;
   render(container, ctx);
   try {
-    const path = `${store.id}/${storeProductId}/${Date.now()}-${file.name}`;
-    const { error: upErr } = await sb.storage.from('dealer-videos').upload(path, file, { upsert: false });
-    if (upErr) throw upErr;
-    const { data: pub } = sb.storage.from('dealer-videos').getPublicUrl(path);
     const { error: insErr } = await sb.from('product_videos').insert({
       store_product_id: storeProductId,
-      video_url: pub.publicUrl,
-      source: 'live_recording',
+      video_url: url,
+      source: 'youtube',
     });
     if (insErr) throw insErr;
-    // Video var artık — ürünü aktive et (DB tetikleyicisi has_video=true görüp izin verir).
+    // Video linki var artık — ürünü aktive et (DB tetikleyicisi has_video=true görüp izin verir).
     await sb.from('store_products').update({ is_active: true }).eq('id', storeProductId);
   } catch (e) {
-    alert('Video yüklenemedi: ' + e.message);
+    alert('YouTube linki kaydedilemedi: ' + e.message);
   } finally {
-    uploadingId = null;
+    savingLinkId = null;
     await loadAll();
     render(container, ctx);
   }
+}
+
+async function removeVideo(videoId, storeProductId, container, ctx) {
+  if (!confirm('Bu YouTube linkini kaldırmak istediğinize emin misiniz? Başka video eklemezseniz ürün canlıda gösterilemez.')) return;
+  const { error } = await sb.from('product_videos').delete().eq('id', videoId);
+  if (error) { alert('Kaldırılamadı: ' + error.message); return; }
+  await loadAll();
+  render(container, ctx);
 }
 
 function progressColor(ratio) {
@@ -147,7 +169,7 @@ async function render(container, ctx) {
     <div class="card" style="margin-bottom:16px;font-size:12px;color:var(--muted)">
       Ürünleri kendiniz oluşturamazsınız — yalnızca onaylı tedarikçi kataloğundan seçebilirsiniz.
       Her kategoride ürünlerin en az <b style="color:var(--gold)">%20</b>'sini seçmeniz gerekir, aksi halde kategori pasif kalır.
-      Seçtiğiniz her ürün için en az <b style="color:var(--gold)">1 canlı sunum videosu</b> yüklemelisiniz — yoksa ürün canlıda gösterilemez ve satılamaz.
+      Seçtiğiniz her ürün için, kendi YouTube kanalınızda paylaştığınız bir tanıtım videosunun <b style="color:var(--gold)">linkini</b> eklemelisiniz — yoksa ürün canlıda gösterilemez ve satılamaz.
     </div>
 
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
@@ -179,6 +201,35 @@ async function render(container, ctx) {
   renderCategoryBody(container, ctx, statusByCat);
 }
 
+function renderVideoCell(mine) {
+  if (savingLinkId === mine.id) {
+    return `<span style="font-size:11px;color:var(--muted)"><i class="fas fa-spinner fa-spin"></i> Kaydediliyor...</span>`;
+  }
+  if (mine.has_video) {
+    const lastVideo = mine.product_videos?.[mine.product_videos.length - 1];
+    return `
+      <div style="display:flex;align-items:center;gap:8px">
+        <a href="${lastVideo?.video_url || '#'}" target="_blank" rel="noopener" class="tag tag-green" style="font-size:10px;text-decoration:none">
+          <i class="fab fa-youtube"></i> Linki Görüntüle
+        </a>
+        ${lastVideo ? `<button class="btn btn-sm btn-ghost dc-video-remove" data-video-id="${lastVideo.id}" data-store-product="${mine.id}" title="Linki kaldır"><i class="fas fa-trash"></i></button>` : ''}
+      </div>`;
+  }
+  if (linkFormOpenId === mine.id) {
+    return `
+      <div class="dc-yt-form" style="display:flex;gap:6px;align-items:center">
+        <input type="url" class="dc-yt-input" data-store-product="${mine.id}"
+          placeholder="https://youtube.com/watch?v=..."
+          style="width:190px;font-size:11px;padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text)">
+        <button class="btn btn-sm btn-green dc-yt-save" data-store-product="${mine.id}" title="Kaydet"><i class="fas fa-check"></i></button>
+        <button class="btn btn-sm btn-ghost dc-yt-cancel" title="Vazgeç"><i class="fas fa-xmark"></i></button>
+      </div>`;
+  }
+  return `<button class="btn btn-sm btn-ghost dc-yt-open" data-store-product="${mine.id}">
+      <i class="fab fa-youtube"></i> YouTube Linki Ekle
+    </button>`;
+}
+
 function renderCategoryBody(container, ctx, statusByCat) {
   const body = container.querySelector('#dcCategoryBody');
   if (!body) return;
@@ -201,10 +252,10 @@ function renderCategoryBody(container, ctx, statusByCat) {
     </div>` : ''}
 
     <div class="table-wrap"><table>
-      <thead><tr><th>Ürün</th><th>Önerilen Fiyat</th><th>Seçim</th><th>Video</th></tr></thead>
+      <thead><tr><th>Ürün</th><th>Önerilen Fiyat</th><th>Seçim</th><th>Tanıtım Videosu (YouTube)</th><th>Toptan Alım</th></tr></thead>
       <tbody>
         ${catalog.length === 0
-          ? `<tr><td colspan="4" style="color:var(--muted);font-size:12px">Bu kategoride onaylı katalog ürünü yok.</td></tr>`
+          ? `<tr><td colspan="5" style="color:var(--muted);font-size:12px">Bu kategoride onaylı katalog ürünü yok.</td></tr>`
           : catalog.map(cp => {
             const mine = myProductFor(cp.id);
             return `<tr>
@@ -216,20 +267,43 @@ function renderCategoryBody(container, ctx, statusByCat) {
                   : `<button class="btn btn-sm btn-green dc-select" data-catalog="${cp.id}"><i class="fas fa-plus"></i> Seç</button>`}
               </td>
               <td>
-                ${!mine ? '—' : mine.has_video
-                  ? `<span class="tag tag-green" style="font-size:10px"><i class="fas fa-circle-check"></i> Yüklendi</span>`
-                  : uploadingId === mine.id
-                    ? `<span style="font-size:11px;color:var(--muted)">Yükleniyor...</span>`
-                    : `<label class="btn btn-sm btn-ghost" style="cursor:pointer">
-                        <i class="fas fa-video"></i> Video Yükle
-                        <input type="file" accept="video/*" class="dc-video-input" data-store-product="${mine.id}" style="display:none">
-                      </label>`}
+                ${!mine ? '—' : renderVideoCell(mine)}
+              </td>
+              <td>
+                <button class="btn btn-sm btn-ghost dc-start-auction" data-catalog="${cp.id}" data-name="${cp.name}" data-ceiling="${cp.suggested_price || 0}">
+                  <i class="fas fa-gavel"></i> İhale Başlat
+                </button>
               </td>
             </tr>`;
           }).join('')}
       </tbody>
     </table></div>
   `;
+
+  // FAZ B — Toptan (azalan teklif) ihale başlat. Onaylı katalog ürününden
+  // start_wholesale_auction() RPC'sini çağırır (sadece dealer çağırabilir —
+  // DB tarafında da zorlanıyor). Kazananı SADECE tedarikçiler belirleyebilir
+  // (supplier_bids RLS'i bunu ayrıca garanti ediyor).
+  body.querySelectorAll('.dc-start-auction').forEach(btn => {
+    btn.onclick = async () => {
+      const qty = Number(prompt(`"${btn.dataset.name}" için toplam miktar:`, '100'));
+      if (!qty || qty <= 0) return;
+      const unit = prompt('Miktar birimi (kg, adet, koli...):', 'kg') || 'kg';
+      const ceiling = Number(prompt('Tavan birim fiyat (₺):', btn.dataset.ceiling) || 0);
+      if (!ceiling || ceiling <= 0) return alert('Geçerli bir tavan fiyat girin.');
+      const hours = Number(prompt('İhale kaç saat açık kalsın?', '48') || 48);
+
+      const { data, error } = await sb.rpc('start_wholesale_auction', {
+        p_catalog_product_id: btn.dataset.catalog,
+        p_quantity: qty,
+        p_quantity_unit: unit,
+        p_ceiling_price: ceiling,
+        p_hours_open: hours,
+      });
+      if (error) return alert('İhale başlatılamadı: ' + error.message);
+      alert('Toptan alım ihalesi başlatıldı. Tedarikçiler teklif verebilir.');
+    };
+  });
 
   body.querySelectorAll('.dc-select').forEach(btn => {
     btn.onclick = async () => {
@@ -244,11 +318,31 @@ function renderCategoryBody(container, ctx, statusByCat) {
       await loadAll(); render(container, ctx);
     };
   });
-  body.querySelectorAll('.dc-video-input').forEach(input => {
-    input.onchange = () => {
-      const file = input.files?.[0];
-      if (file) uploadVideo(input.dataset.storeProduct, file, container, ctx);
+  body.querySelectorAll('.dc-yt-open').forEach(btn => {
+    btn.onclick = () => { linkFormOpenId = btn.dataset.storeProduct; renderCategoryBody(container, ctx, statusByCat); };
+  });
+  body.querySelectorAll('.dc-yt-cancel').forEach(btn => {
+    btn.onclick = () => { linkFormOpenId = null; renderCategoryBody(container, ctx, statusByCat); };
+  });
+  const submitYtForm = (storeProductId) => {
+    const input = body.querySelector(`.dc-yt-input[data-store-product="${storeProductId}"]`);
+    const url = input?.value || '';
+    if (!url.trim()) { alert('Lütfen bir YouTube linki girin.'); return; }
+    addYoutubeLink(storeProductId, url, container, ctx);
+  };
+  body.querySelectorAll('.dc-yt-save').forEach(btn => {
+    btn.onclick = () => submitYtForm(btn.dataset.storeProduct);
+  });
+  body.querySelectorAll('.dc-yt-input').forEach(input => {
+    input.onkeydown = (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); submitYtForm(input.dataset.storeProduct); }
+      if (e.key === 'Escape') { linkFormOpenId = null; renderCategoryBody(container, ctx, statusByCat); }
     };
+    // Formu açtığımız anda kullanıcı hemen yazabilsin.
+    if (linkFormOpenId === input.dataset.storeProduct) input.focus();
+  });
+  body.querySelectorAll('.dc-video-remove').forEach(btn => {
+    btn.onclick = () => removeVideo(btn.dataset.videoId, btn.dataset.storeProduct, container, ctx);
   });
 }
 

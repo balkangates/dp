@@ -25,11 +25,24 @@ let activeTab = 'auctions';
 let myCatalogProducts = [];
 let categories = [];
 
+// Önceden BÜTÜN platformdaki bütün aktif reverse_auctions'lar HER
+// tedarikçiye gösteriliyordu — kendi ürün kategorisiyle hiç alakası
+// olmayan talepler dahil. reverse_auctions.catalog_product_id, hangi
+// onaylı ürüne ait olduğunu tutuyor (v10/v11 migration) — artık sadece
+// KENDİ kataloğundaki ürünlerle eşleşen (+ henüz bir ürüne
+// bağlanmamış/eski, catalog_product_id NULL olan) talepler gösteriliyor.
 async function fetchOpenAuctions() {
-  const { data } = await sb.from('reverse_auctions')
+  const myProductIds = myCatalogProducts.map(p => p.id);
+  let query = sb.from('reverse_auctions')
     .select('*')
-    .eq('status', 'active')
-    .order('end_time', { ascending: true });
+    .eq('status', 'active');
+
+  query = myProductIds.length > 0
+    ? query.or(`catalog_product_id.in.(${myProductIds.join(',')}),catalog_product_id.is.null`)
+    : query.is('catalog_product_id', null);
+
+  const { data, error } = await query.order('end_time', { ascending: true });
+  if (error) { console.error('[supplier] ihaleler yüklenemedi:', error); return []; }
   return data || [];
 }
 

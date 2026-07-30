@@ -102,9 +102,11 @@ async function toggleLive(ctx, container) {
   try {
     if (store.is_live) {
       disconnectPublisherRoom();
-      await sb.rpc('end_live_session', { p_store_id: store.id });
+      const { error } = await sb.rpc('end_live_session', { p_store_id: store.id });
+      if (error) throw error;
     } else {
-      await sb.rpc('start_live_session', { p_store_id: store.id });
+      const { error } = await sb.rpc('start_live_session', { p_store_id: store.id });
+      if (error) throw error;
       try {
         await connectPublisherRoom();
       } catch (videoErr) {

@@ -18,6 +18,7 @@ import { getCurrentPosition, getNearestStores, getAllStores, type NearbyStore } 
 import { getStoreProducts, placeOrder, getMyOrders, getCategories, getProductVideo, getStoreActiveAuctions, type StoreProduct, type CartLine, type Category, type StoreWholesaleAuction } from '../lib/dampingvar';
 import VideoPopupModal from './VideoPopupModal';
 import StoreLiveViewer from './StoreLiveViewer';
+import LiveStream from './LiveStream';
 
 function timeLeft(endTime: string) {
   const ms = new Date(endTime).getTime() - Date.now();
@@ -362,11 +363,14 @@ export default function CustomerHome() {
       </button>
       <h2 className="text-white font-black text-xl">{selectedStore.name}</h2>
 
-      <StoreLiveViewer
-        storeId={selectedStore.store_id}
-        storeName={selectedStore.name}
-        initialIsLive={selectedStore.is_live}
-      />
+      <div className="grid grid-cols-1 lg:grid-cols-[65%_35%] gap-5">
+        <StoreLiveViewer
+          storeId={selectedStore.store_id}
+          storeName={selectedStore.name}
+          initialIsLive={selectedStore.is_live}
+        />
+        <LiveStream storeId={selectedStore.store_id} storeName={selectedStore.name} />
+      </div>
 
       <div className="grid lg:grid-cols-[1fr_320px] gap-5">
         <div>

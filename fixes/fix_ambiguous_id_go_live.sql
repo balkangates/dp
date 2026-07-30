@@ -19,6 +19,13 @@
 -- gerekmiyor.
 -- =====================================================================
 
+-- Önce eskilerini kaldır — CREATE OR REPLACE, dönüş tipi (RETURNS TABLE
+-- yapısı vb.) farklıysa "cannot change return type of existing function"
+-- hatası verir. DROP + yeniden CREATE bunu kesin çözer.
+DROP FUNCTION IF EXISTS public.start_live_session(uuid);
+DROP FUNCTION IF EXISTS public.end_live_session(uuid);
+DROP FUNCTION IF EXISTS public.can_store_go_live(uuid);
+
 CREATE OR REPLACE FUNCTION public.can_store_go_live(p_store_id uuid)
 RETURNS TABLE(allowed boolean, reason text) AS $$
 BEGIN

@@ -10,9 +10,14 @@ const USER_COLORS = [
 ];
 const MAX_OVERLAY_MSGS = 6;
 
-// Supabase'de sabit "live yayın" conversation ID
-// fix_live_conversation_v2.sql ile oluşturuldu
-const LIVE_CONV_ID = 'e3fc6ac0-5e8f-4bb6-9aa1-ca1d84ddaf73';
+// Eskiden burada TEK ve SABİT bir "live yayın" conversation ID'si vardı
+// (fix_live_conversation_v2.sql) — hangi bayi seçilirse seçilsin herkes
+// aynı genel sohbeti görüyordu. Artık storeId verilirse (bkz.
+// get_or_create_store_live_conversation RPC — fixes/fix_store_live_chat.sql)
+// HER MAĞAZA kendi sohbetini alıyor. storeId verilmezse (App.tsx'teki eski
+// genel hero bölümü — sadece customer olmayan roller için) eski sabit
+// ID'ye geri düşülüyor, geriye dönük uyumluluk için.
+const LEGACY_GLOBAL_CONV_ID = 'e3fc6ac0-5e8f-4bb6-9aa1-ca1d84ddaf73';
 
 // ─── Tip ────────────────────────────────────────────────────────────────────────
 interface LiveMessage {
@@ -52,10 +57,20 @@ function mapMsg(row: Record<string, any>, colorMap: Record<string, string>): Liv
 }
 
 // ─── Ana Bileşen ────────────────────────────────────────────────────────────────
-export default function LiveStream() {
+export default function LiveStream({
+  storeId,
+  storeName,
+}: {
+  storeId?: string;
+  storeName?: string;
+} = {}) {
   const { user, profile } = useAuth();
 
   const colorMapRef = useRef<Record<string, string>>({});
+
+  // storeId verilmişse o mağazanın kendi sohbeti çözülene kadar bekle —
+  // verilmemişse (eski genel hero) hemen sabit ID kullanılır.
+  const [conversationId, setConversationId] = useState<string | null>(storeId ? null : LEGACY_GLOBAL_CONV_ID);
 
   const [messages, setMessages]     = useState<LiveMessage[]>([]);
   const [input, setInput]           = useState('');
@@ -73,6 +88,25 @@ export default function LiveStream() {
     '😂','🤣','😊','🥳','👍','💪','🙏','😎',
     '🤑','💯','🚀','✅','😮','🤯','😆','🥰',
   ];
+
+  // Mağaza değişince o mağazanın sohbet conversation'ını bul/oluştur.
+  useEffect(() => {
+    if (!storeId) { setConversationId(LEGACY_GLOBAL_CONV_ID); return; }
+    let cancelled = false;
+    setConversationId(null);
+    setMessages([]);
+    supabase
+      .rpc('get_or_create_store_live_conversation', { p_store_id: storeId })
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) {
+          console.error('[LiveStream] mağaza sohbeti oluşturulamadı:', error);
+          return;
+        }
+        setConversationId(data as string);
+      });
+    return () => { cancelled = true; };
+  }, [storeId]);
 
   // Emoji picker dışına tıklayınca kapat
   useEffect(() => {
@@ -94,6 +128,7 @@ export default function LiveStream() {
 
   // ── 1. Geçmiş mesajları çek — message_type = 'live' ─────────────────────────
   useEffect(() => {
+    if (!conversationId) return;
     let cancelled = false;
 
     async function fetchMessages() {
@@ -113,7 +148,7 @@ export default function LiveStream() {
           )
         `)
         .eq('message_type', 'live')
-        .eq('conversation_id', LIVE_CONV_ID)  // sadece live broadcast conversation
+        .eq('conversation_id', conversationId)  // sadece bu mağazanın canlı sohbeti
         .order('created_at', { ascending: false })
         .limit(10);
 
@@ -133,12 +168,13 @@ export default function LiveStream() {
 
     fetchMessages();
     return () => { cancelled = true; };
-  }, []);
+  }, [conversationId]);
 
   // ── 2. Realtime — message_type = 'live' filtresi ────────────────────────────
   useEffect(() => {
+    if (!conversationId) return;
     const channel = supabase
-      .channel('livestream_chat_v3')
+      .channel(`livestream_chat_${conversationId}`)
       .on(
         'postgres_changes',
         {
@@ -146,7 +182,7 @@ export default function LiveStream() {
           schema: 'public',
           table:  'messages',
           // Supabase realtime filter: message_type eşit 'live'
-          filter: `message_type=eq.live&conversation_id=eq.${LIVE_CONV_ID}`,
+          filter: `message_type=eq.live&conversation_id=eq.${conversationId}`,
         },
         async (payload) => {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -182,7 +218,7 @@ export default function LiveStream() {
       });
 
     return () => { supabase.removeChannel(channel); };
-  }, []);
+  }, [conversationId]);
 
   // ── 3. İzleyici sayısı ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -209,6 +245,11 @@ export default function LiveStream() {
       return;
     }
     if (!text || sending) return;
+    if (!conversationId) {
+      setSendError('Sohbet hazırlanıyor, birkaç saniye sonra tekrar deneyin.');
+      setTimeout(() => setSendError(null), 3000);
+      return;
+    }
 
     setSending(true);
     setSendError(null);
@@ -248,7 +289,7 @@ export default function LiveStream() {
       message_type:     'live',
       is_read:          true,
       is_system_message: false,
-      conversation_id:  LIVE_CONV_ID,  // FK zorunlu — sabit live conversation
+      conversation_id:  conversationId,  // FK zorunlu — bu mağazanın canlı sohbeti
       // receiver_id: yok → genel yayın
     });
 
@@ -263,7 +304,7 @@ export default function LiveStream() {
 
     setSending(false);
     setTimeout(() => inputRef.current?.focus(), 50);
-  }, [input, user, profile, sending]);
+  }, [input, user, profile, sending, conversationId]);
 
   const handleKey = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -282,32 +323,45 @@ export default function LiveStream() {
   return (
     <div
       className="relative w-full rounded-2xl overflow-hidden border border-[#2A3650]"
-      style={{ aspectRatio: '16/9', background: '#000' }}
+      style={storeId ? { minHeight: 260, background: '#0B1220' } : { aspectRatio: '16/9', background: '#000' }}
     >
-      {/* ── Video ── */}
-      <video className="absolute inset-0 w-full h-full object-cover" autoPlay loop muted playsInline>
-        <source src="https://videos.pexels.com/video-files/6833913/6833913-hd_1920_1080_25fps.mp4" type="video/mp4" />
-      </video>
+      {!storeId && (
+        <>
+          {/* ── Video (dekoratif atmosfer — sabit stok görüntü) ── */}
+          <video className="absolute inset-0 w-full h-full object-cover" autoPlay loop muted playsInline>
+            <source src="https://videos.pexels.com/video-files/6833913/6833913-hd_1920_1080_25fps.mp4" type="video/mp4" />
+          </video>
 
-      {/* Degrade katmanlar */}
-      <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/70 pointer-events-none" />
-      <div className="absolute inset-0 bg-gradient-to-r from-black/20 via-transparent to-transparent pointer-events-none" />
+          {/* Degrade katmanlar */}
+          <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/70 pointer-events-none" />
+          <div className="absolute inset-0 bg-gradient-to-r from-black/20 via-transparent to-transparent pointer-events-none" />
+        </>
+      )}
 
       {/* ── Üst rozetler ── */}
       <div className="absolute top-3 left-3 right-3 z-20 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="flex items-center gap-1.5 bg-red-600/80 text-white px-3 py-1 rounded-lg text-[11px] font-bold tracking-widest backdrop-blur-sm">
-            <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
-            CANLI YAYIN
-          </span>
-          <span className="flex items-center gap-1.5 bg-black/40 text-white px-3 py-1 rounded-lg text-[11px] font-mono border border-white/10 backdrop-blur-sm">
-            <i className="fas fa-eye text-[#38BDF8]" />
-            {viewerCount > 0 ? viewerCount.toLocaleString('tr-TR') : '—'}
-          </span>
-          <span className="hidden sm:flex items-center gap-1.5 bg-black/40 text-white px-3 py-1 rounded-lg text-[11px] font-mono border border-white/10 backdrop-blur-sm">
-            <i className="fas fa-signal text-[#10B981]" />
-            HD 1080p
-          </span>
+          {storeId ? (
+            <span className="flex items-center gap-1.5 bg-black/40 text-white px-3 py-1 rounded-lg text-[11px] font-bold backdrop-blur-sm">
+              <i className="fas fa-comments" style={{ color: '#D4AF37' }} />
+              {storeName ? `${storeName} — Canlı Sohbet` : 'Canlı Sohbet'}
+            </span>
+          ) : (
+            <>
+              <span className="flex items-center gap-1.5 bg-red-600/80 text-white px-3 py-1 rounded-lg text-[11px] font-bold tracking-widest backdrop-blur-sm">
+                <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
+                CANLI YAYIN
+              </span>
+              <span className="flex items-center gap-1.5 bg-black/40 text-white px-3 py-1 rounded-lg text-[11px] font-mono border border-white/10 backdrop-blur-sm">
+                <i className="fas fa-eye text-[#38BDF8]" />
+                {viewerCount > 0 ? viewerCount.toLocaleString('tr-TR') : '—'}
+              </span>
+              <span className="hidden sm:flex items-center gap-1.5 bg-black/40 text-white px-3 py-1 rounded-lg text-[11px] font-mono border border-white/10 backdrop-blur-sm">
+                <i className="fas fa-signal text-[#10B981]" />
+                HD 1080p
+              </span>
+            </>
+          )}
         </div>
         <div className="flex gap-1.5">
           {['❤️', '🔥', '👏'].map(em => (
@@ -508,13 +562,15 @@ export default function LiveStream() {
         )}
       </div>
 
-      {/* Sağ alt: yayın kalitesi */}
-      <div className="absolute bottom-14 right-3 z-20">
-        <div className="rounded-lg px-3 py-2" style={{ background: 'rgba(0,0,0,0.40)', border: '1px solid rgba(42,54,80,0.6)', backdropFilter: 'blur(4px)' }}>
-          <p className="text-[9px] text-[#5E7090] font-mono">YAYIN KALİTESİ</p>
-          <p className="text-[11px] text-[#10B981] font-mono font-bold">● STABLE</p>
+      {/* Sağ alt: yayın kalitesi — sadece eski/genel (dekoratif video'lu) modda anlamlı */}
+      {!storeId && (
+        <div className="absolute bottom-14 right-3 z-20">
+          <div className="rounded-lg px-3 py-2" style={{ background: 'rgba(0,0,0,0.40)', border: '1px solid rgba(42,54,80,0.6)', backdropFilter: 'blur(4px)' }}>
+            <p className="text-[9px] text-[#5E7090] font-mono">YAYIN KALİTESİ</p>
+            <p className="text-[11px] text-[#10B981] font-mono font-bold">● STABLE</p>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

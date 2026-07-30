@@ -153,31 +153,33 @@ function AppInner() {
         {/* Stats Bar — platform_stats tablosundan (Realtime) */}
         <StatsBar />
 
-        {/* Hero: Live Stream + Auction Panel */}
-        <section className="grid grid-cols-1 lg:grid-cols-[65%_35%] gap-5">
-          <LiveStream />
-          <AuctionPanel
-            key={activeAuctionId}
-            auction={activeAuction}
-            onBid={(id, amount) => {
-              // Anlık: aktif ihaledeki current_bid'i güncelle
-              setAuctions(prev => prev.map(a => a.id === id ? { ...a, current_bid: amount, bid_count: (a.bid_count ?? 0) + 1 } : a));
-              if (activeAuction.id === id) setActiveAuction(prev => ({ ...prev, current_bid: amount }));
-            }}
-            onAuctionEnd={(id) => {
-              setAuctions(prev => prev.map(a => a.id === id ? { ...a, status: 'ended' } : a));
-            }}
-          />
-        </section>
-
-        {/* Auction List — auctions tablosundan */}
-        <AuctionList auctions={auctions} activeId={activeAuctionId} onSelect={handleSelectAuction} />
-
         {/* Leaderboard + Products — müşteri girişliyse ÖNCE mağaza seçimi zorunlu */}
         {profile?.role === 'customer' ? (
           <CustomerHome />
         ) : (
           <>
+            {/* Hero: Live Stream + Auction Panel — SADECE customer olmayan roller
+                (misafir/diğer paneller). Customer artık kendi seçtiği mağazanın
+                CANLI YAYININI + SOHBETİNİ CustomerHome içinde görüyor. */}
+            <section className="grid grid-cols-1 lg:grid-cols-[65%_35%] gap-5">
+              <LiveStream />
+              <AuctionPanel
+                key={activeAuctionId}
+                auction={activeAuction}
+                onBid={(id, amount) => {
+                  // Anlık: aktif ihaledeki current_bid'i güncelle
+                  setAuctions(prev => prev.map(a => a.id === id ? { ...a, current_bid: amount, bid_count: (a.bid_count ?? 0) + 1 } : a));
+                  if (activeAuction.id === id) setActiveAuction(prev => ({ ...prev, current_bid: amount }));
+                }}
+                onAuctionEnd={(id) => {
+                  setAuctions(prev => prev.map(a => a.id === id ? { ...a, status: 'ended' } : a));
+                }}
+              />
+            </section>
+
+            {/* Auction List — auctions tablosundan */}
+            <AuctionList auctions={auctions} activeId={activeAuctionId} onSelect={handleSelectAuction} />
+
             <div className="grid grid-cols-1 xl:grid-cols-[320px_1fr] gap-5">
               <div className="hidden xl:block">
                 {/* Leaderboard — store_leaderboard view'ından (bayi mağaza sıralaması) */}

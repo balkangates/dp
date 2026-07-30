@@ -214,12 +214,34 @@ export interface Category {
   name: string;
   icon: string | null;
   sort_order: number;
+  sector_id: string | null;
 }
 
 export async function getCategories(): Promise<Category[]> {
   const { data, error } = await supabase
     .from('categories')
-    .select('id, name, icon, sort_order')
+    .select('id, name, icon, sort_order, sector_id')
+    .eq('is_active', true)
+    .order('sort_order', { ascending: true });
+  if (error) throw error;
+  return data ?? [];
+}
+
+export interface Sector {
+  id: string;
+  label: string;
+  icon: string | null;
+  color: string | null;
+}
+
+// Mağaza ürünleri artık sadece kategori değil, ÖNCE SEKTÖR bazlı da
+// filtrelenebiliyor (bkz. CustomerHome.tsx — sektör sekmesi → o sektöre
+// ait kategori sekmeleri → ürün kartları). sectors tablosu → categories
+// tablosu (sector_id FK) → store_products (category_id FK) zincirine bağlı.
+export async function getSectors(): Promise<Sector[]> {
+  const { data, error } = await supabase
+    .from('sectors')
+    .select('id, label, icon, color')
     .eq('is_active', true)
     .order('sort_order', { ascending: true });
   if (error) throw error;
@@ -239,14 +261,20 @@ export interface StoreProduct {
   has_video: boolean;
 }
 
-export async function getStoreProducts(storeId: string, categoryId?: string): Promise<StoreProduct[]> {
+export async function getStoreProducts(storeId: string, categoryId?: string, sectorId?: string): Promise<StoreProduct[]> {
+  // Sadece sektör seçiliyken (kategori seçilmediyse) categories'i INNER
+  // join'e çeviriyoruz ki "categories.sector_id" filtresi çalışsın.
+  // Normalde (sektör/kategori seçili değilken) categories LEFT join
+  // kalmalı — yoksa kategori atanmamış ürünler listeden kaybolur.
+  const embed = (sectorId && !categoryId) ? 'categories!inner(name, sector_id)' : 'categories(name, sector_id)';
   let query = supabase
     .from('store_products')
-    .select('id, name, price, image_url, unit, unit_size, stock_qty, category_id, has_video, categories(name)')
+    .select(`id, name, price, image_url, unit, unit_size, stock_qty, category_id, has_video, ${embed}`)
     .eq('store_id', storeId)
     .eq('is_active', true)
     .gt('stock_qty', 0);
   if (categoryId) query = query.eq('category_id', categoryId);
+  else if (sectorId) query = query.eq('categories.sector_id', sectorId);
 
   const { data, error } = await query.order('created_at', { ascending: false });
   if (error) throw error;

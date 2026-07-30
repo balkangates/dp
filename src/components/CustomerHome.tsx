@@ -15,7 +15,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { getCurrentPosition, getNearestStores, getAllStores, type NearbyStore } from '../lib/geo';
-import { getStoreProducts, placeOrder, getMyOrders, getCategories, getProductVideo, getStoreActiveAuctions, type StoreProduct, type CartLine, type Category, type StoreWholesaleAuction } from '../lib/dampingvar';
+import { getStoreProducts, placeOrder, getMyOrders, getCategories, getSectors, getProductVideo, getStoreActiveAuctions, type StoreProduct, type CartLine, type Category, type Sector, type StoreWholesaleAuction } from '../lib/dampingvar';
 import VideoPopupModal from './VideoPopupModal';
 import StoreLiveViewer from './StoreLiveViewer';
 import LiveStream from './LiveStream';
@@ -317,22 +317,33 @@ export default function CustomerHome() {
   const [selectedStore, setSelectedStore] = useState<NearbyStore | null>(null);
   const [products, setProducts] = useState<StoreProduct[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [sectors, setSectors] = useState<Sector[]>([]);
+  const [activeSector, setActiveSector] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [cart, setCart] = useState<CartLine[]>([]);
   const [myOrders, setMyOrders] = useState<any[]>([]);
 
-  const loadProducts = useCallback(async (storeId: string, categoryId?: string) => {
-    const p = await getStoreProducts(storeId, categoryId);
+  const loadProducts = useCallback(async (storeId: string, categoryId?: string, sectorId?: string) => {
+    const p = await getStoreProducts(storeId, categoryId, sectorId);
     setProducts(p);
   }, []);
 
   useEffect(() => {
     getCategories().then(setCategories).catch(() => setCategories([]));
+    getSectors().then(setSectors).catch(() => setSectors([]));
   }, []);
 
   useEffect(() => {
-    if (selectedStore) loadProducts(selectedStore.store_id, activeCategory ?? undefined);
-  }, [selectedStore, activeCategory, loadProducts]);
+    if (selectedStore) loadProducts(selectedStore.store_id, activeCategory ?? undefined, activeSector ?? undefined);
+  }, [selectedStore, activeCategory, activeSector, loadProducts]);
+
+  // Sektör değişince, o sektöre ait olmayan bir kategori seçiliyse sıfırla.
+  useEffect(() => {
+    if (!activeSector) return;
+    const stillValid = categories.some((c) => c.id === activeCategory && c.sector_id === activeSector);
+    if (!stillValid) setActiveCategory(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSector]);
 
   const refreshOrders = useCallback(async () => {
     if (!user) return;
@@ -377,6 +388,27 @@ export default function CustomerHome() {
           <div className="flex items-center justify-between mb-3">
             <p className="text-white font-extrabold text-sm">Ürünler</p>
           </div>
+          {sectors.length > 0 && (
+            <div className="flex gap-1.5 overflow-x-auto no-scrollbar mb-2">
+              <button
+                onClick={() => setActiveSector(null)}
+                className="px-3 py-1.5 rounded-lg text-[11px] font-bold whitespace-nowrap"
+                style={{ background: activeSector === null ? '#D4AF37' : '#090d16', color: activeSector === null ? '#000' : '#5E7090', border: '1px solid #2A3650' }}
+              >
+                Tüm Sektörler
+              </button>
+              {sectors.map((s) => (
+                <button
+                  key={s.id}
+                  onClick={() => setActiveSector(s.id)}
+                  className="px-3 py-1.5 rounded-lg text-[11px] font-bold whitespace-nowrap"
+                  style={{ background: activeSector === s.id ? (s.color ?? '#D4AF37') : '#090d16', color: activeSector === s.id ? '#000' : '#5E7090', border: '1px solid #2A3650' }}
+                >
+                  {s.icon ? `${s.icon} ` : ''}{s.label}
+                </button>
+              ))}
+            </div>
+          )}
           {categories.length > 0 && (
             <div className="flex gap-1.5 overflow-x-auto no-scrollbar mb-3">
               <button
@@ -386,16 +418,18 @@ export default function CustomerHome() {
               >
                 Tümü
               </button>
-              {categories.map((c) => (
-                <button
-                  key={c.id}
-                  onClick={() => setActiveCategory(c.id)}
-                  className="px-3 py-1.5 rounded-lg text-[11px] font-bold whitespace-nowrap"
-                  style={{ background: activeCategory === c.id ? '#D4AF37' : '#090d16', color: activeCategory === c.id ? '#000' : '#5E7090', border: '1px solid #2A3650' }}
-                >
-                  {c.icon ? `${c.icon} ` : ''}{c.name}
-                </button>
-              ))}
+              {categories
+                .filter((c) => !activeSector || c.sector_id === activeSector)
+                .map((c) => (
+                  <button
+                    key={c.id}
+                    onClick={() => setActiveCategory(c.id)}
+                    className="px-3 py-1.5 rounded-lg text-[11px] font-bold whitespace-nowrap"
+                    style={{ background: activeCategory === c.id ? '#D4AF37' : '#090d16', color: activeCategory === c.id ? '#000' : '#5E7090', border: '1px solid #2A3650' }}
+                  >
+                    {c.icon ? `${c.icon} ` : ''}{c.name}
+                  </button>
+                ))}
             </div>
           )}
           {products.length === 0 ? (

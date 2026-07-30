@@ -169,7 +169,7 @@ async function render(container, ctx) {
     <div class="card" style="margin-bottom:16px;font-size:12px;color:var(--muted)">
       Ürünleri kendiniz oluşturamazsınız — yalnızca onaylı tedarikçi kataloğundan seçebilirsiniz.
       Her kategoride ürünlerin en az <b style="color:var(--gold)">%20</b>'sini seçmeniz gerekir, aksi halde kategori pasif kalır.
-      Seçtiğiniz her ürün için, kendi YouTube kanalınızda paylaştığınız bir tanıtım videosunun <b style="color:var(--gold)">linkini</b> eklemelisiniz — yoksa ürün canlıda gösterilemez ve satılamaz.
+      Seçtiğiniz her ürün için, kendi YouTube kanalınızda paylaştığınız bir tanıtım videosunun <b style="color:var(--gold)">linkini</b> eklemelisiniz ve <b style="color:var(--gold)">Stok</b> adedini 0'ın üzerine girmelisiniz — yoksa ürün canlıda/mağaza sayfanızda gösterilemez ve satılamaz.
     </div>
 
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
@@ -252,7 +252,7 @@ function renderCategoryBody(container, ctx, statusByCat) {
     </div>` : ''}
 
     <div class="table-wrap"><table>
-      <thead><tr><th>Ürün</th><th>Önerilen Fiyat</th><th>Seçim</th><th>Tanıtım Videosu (YouTube)</th><th>Toptan Alım</th></tr></thead>
+      <thead><tr><th>Ürün</th><th>Önerilen Fiyat</th><th>Seçim</th><th>Stok</th><th>Tanıtım Videosu (YouTube)</th><th>Toptan Alım</th></tr></thead>
       <tbody>
         ${catalog.length === 0
           ? `<tr><td colspan="5" style="color:var(--muted);font-size:12px">Bu kategoride onaylı katalog ürünü yok.</td></tr>`
@@ -265,6 +265,14 @@ function renderCategoryBody(container, ctx, statusByCat) {
                 ${mine
                   ? `<button class="btn btn-sm btn-red dc-deselect" data-store-product="${mine.id}"><i class="fas fa-xmark"></i> Kaldır</button>`
                   : `<button class="btn btn-sm btn-green dc-select" data-catalog="${cp.id}"><i class="fas fa-plus"></i> Seç</button>`}
+              </td>
+              <td>
+                ${!mine ? '—' : `
+                  <input type="number" min="0" step="1" class="dc-stock-input" data-store-product="${mine.id}"
+                    value="${Number(mine.stock_qty || 0)}"
+                    style="width:70px;font-size:12px;padding:5px 7px;background:var(--bg);border:1px solid ${Number(mine.stock_qty || 0) > 0 ? 'var(--border)' : 'var(--red)'};border-radius:6px;color:var(--text)">
+                  ${Number(mine.stock_qty || 0) <= 0 ? '<div style="font-size:9px;color:var(--red);margin-top:2px">Stok 0 — müşteriye görünmez!</div>' : ''}
+                `}
               </td>
               <td>
                 ${!mine ? '—' : renderVideoCell(mine)}
@@ -318,6 +326,27 @@ function renderCategoryBody(container, ctx, statusByCat) {
       await loadAll(); render(container, ctx);
     };
   });
+  body.querySelectorAll('.dc-stock-input').forEach(input => {
+    const commit = async () => {
+      const storeProductId = input.dataset.storeProduct;
+      const qty = Math.max(0, Math.floor(Number(input.value) || 0));
+      input.value = qty;
+      const { error } = await sb.from('store_products').update({ stock_qty: qty }).eq('id', storeProductId);
+      if (error) { alert('Stok güncellenemedi: ' + error.message); return; }
+      const p = myProducts.find(m => m.id === storeProductId);
+      if (p) p.stock_qty = qty;
+      // Kırmızı/uyarı çerçevesini anında güncelle (tam re-render'a gerek yok).
+      input.style.borderColor = qty > 0 ? 'var(--border)' : 'var(--red)';
+      const warn = input.parentElement.querySelector('div');
+      if (warn) warn.remove();
+      if (qty <= 0) {
+        input.insertAdjacentHTML('afterend', '<div style="font-size:9px;color:var(--red);margin-top:2px">Stok 0 — müşteriye görünmez!</div>');
+      }
+    };
+    input.onblur = commit;
+    input.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); input.blur(); } };
+  });
+
   body.querySelectorAll('.dc-yt-open').forEach(btn => {
     btn.onclick = () => { linkFormOpenId = btn.dataset.storeProduct; renderCategoryBody(container, ctx, statusByCat); };
   });

@@ -90,7 +90,7 @@ async function loadProducts() {
 
 async function loadRecentOrders() {
   const { data } = await sb.from('store_orders')
-    .select('*, store_order_items(*)')
+    .select('*, store_order_items(*), escrow_transactions(status, net_amount), store_order_invoices(invoice_number), delivery_notes(document_no)')
     .eq('store_id', store.id)
     .order('created_at', { ascending: false })
     .limit(10);
@@ -375,6 +375,9 @@ function renderOrderRow(order) {
   const itemsSummary = (order.store_order_items || []).map(i => `${i.quantity}× ${i.product_name}`).join(', ');
   const next = NEXT_STATUS[order.status];
   const canCancel = !['DELIVERED', 'COMPLETED', 'CANCELLED'].includes(order.status);
+  const escrow = order.escrow_transactions?.[0];
+  const invoice = order.store_order_invoices?.[0];
+  const deliveryNote = order.delivery_notes?.[0];
   return `<div class="card-sm" style="margin-bottom:8px">
     <div style="display:flex;justify-content:space-between;align-items:center">
       <span style="font-size:12px;font-weight:700">${itemsSummary || 'Sipariş'}</span>
@@ -388,6 +391,13 @@ function renderOrderRow(order) {
         ${next ? `<button class="btn btn-sm btn-gold order-advance-btn" data-order="${order.id}" data-next="${next}">${STATUS_LABEL[next]} <i class="fas fa-arrow-right"></i></button>` : ''}
       </div>
     </div>
+    ${(escrow || invoice || deliveryNote) ? `
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;padding-top:8px;border-top:1px dashed var(--border);font-size:10px;color:var(--muted)">
+        ${escrow ? `<span><i class="fas fa-vault" style="color:${escrow.status === 'HELD' ? 'var(--amber)' : escrow.status === 'RELEASED' ? 'var(--green)' : 'var(--red)'}"></i> Escrow: ${escrow.status === 'HELD' ? 'Bekliyor' : escrow.status === 'RELEASED' ? 'Serbest' : 'İade'} (₺${Number(escrow.net_amount).toLocaleString('tr-TR')} size)</span>` : ''}
+        ${invoice ? `<span><i class="fas fa-file-invoice"></i> Fatura: ${invoice.invoice_number}</span>` : ''}
+        ${deliveryNote ? `<span><i class="fas fa-truck"></i> İrsaliye: ${deliveryNote.document_no}</span>` : ''}
+      </div>
+    ` : ''}
   </div>`;
 }
 

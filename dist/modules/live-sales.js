@@ -67,9 +67,34 @@ async function loadProducts() {
   return data || [];
 }
 
+// Öncelik 1: order_status_enum'daki tek yönlü geçiş sırası. is_valid_order_transition()
+// DB'de zaten bunu zorluyor — burada sadece "bir sonraki mantıklı adım" ne, onu gösteriyoruz.
+const NEXT_STATUS = {
+  PAYMENT_PENDING: 'CONFIRMED',
+  CONFIRMED: 'PREPARING',
+  PREPARING: 'READY',
+  READY: 'SHIPPED',
+  SHIPPED: 'DELIVERED',
+  DELIVERED: 'COMPLETED',
+};
+const STATUS_LABEL = {
+  PAYMENT_PENDING: 'Ödeme Bekliyor',
+  CONFIRMED: 'Onaylandı',
+  PREPARING: 'Hazırlanıyor',
+  READY: 'Hazır',
+  SHIPPED: 'Kargoda',
+  DELIVERED: 'Teslim Edildi',
+  COMPLETED: 'Tamamlandı',
+  CANCELLED: 'İptal Edildi',
+};
+
 async function loadRecentOrders() {
+  // escrow_transactions/store_order_invoices/delivery_notes: order_id üzerinden
+  // store_orders'a FK'lı oldukları için PostgREST bunları otomatik embed edebiliyor —
+  // fix_order_finance_engine.sql çalıştırılmadıysa bu embed'ler sessizce boş/null gelir,
+  // sayfa yine de çalışmaya devam eder.
   const { data } = await sb.from('store_orders')
-    .select('*, store_order_items(*)')
+    .select('*, store_order_items(*), escrow_transactions(status, net_amount), store_order_invoices(invoice_number), delivery_notes(document_no)')
     .eq('store_id', store.id)
     .order('created_at', { ascending: false })
     .limit(10);
@@ -303,6 +328,13 @@ async function render(container, ctx) {
     if (previewEl) { previewEl.srcObject = localStream; previewEl.play().catch(() => {}); }
   }
 
+  container.querySelectorAll('.order-advance-btn').forEach(btn => {
+    btn.onclick = () => advanceOrder(btn.dataset.order, btn.dataset.next, container, ctx);
+  });
+  container.querySelectorAll('.order-cancel-btn').forEach(btn => {
+    btn.onclick = () => cancelOrder(btn.dataset.order, container, ctx);
+  });
+
   subscribeToOrders(container, ctx);
 }
 
@@ -326,14 +358,51 @@ function renderOfflineVideo(video) {
   `;
 }
 
+// ── Öncelik 1: sipariş durumunu ilerlet / iptal et ───────────────────────
+// DB trigger'ı (v5) geçersiz geçişleri reddediyor, fix_order_finance_engine.sql'deki
+// trigger da her durum değişikliğinde escrow/komisyon/fatura/irsaliye kayıtlarını
+// otomatik oluşturuyor — burada sadece "bir sonraki adım"ı sunuyoruz.
+async function advanceOrder(orderId, nextStatus, container, ctx) {
+  const { error } = await sb.from('store_orders').update({ status: nextStatus }).eq('id', orderId);
+  if (error) { alert('Durum güncellenemedi: ' + error.message); return; }
+  await refreshAndRender(container, ctx);
+}
+
+async function cancelOrder(orderId, container, ctx) {
+  if (!confirm('Bu siparişi iptal etmek istediğinize emin misiniz?')) return;
+  const { error } = await sb.from('store_orders').update({ status: 'CANCELLED' }).eq('id', orderId);
+  if (error) { alert('İptal edilemedi: ' + error.message); return; }
+  await refreshAndRender(container, ctx);
+}
+
 function renderOrderRow(order) {
   const itemsSummary = (order.store_order_items || []).map(i => `${i.quantity}× ${i.product_name}`).join(', ');
+  const next = NEXT_STATUS[order.status];
+  const escrow = order.escrow_transactions?.[0];
+  const invoice = order.store_order_invoices?.[0];
+  const deliveryNote = order.delivery_notes?.[0];
+  const cancellable = order.status !== 'COMPLETED' && order.status !== 'CANCELLED' && order.status !== 'DELIVERED';
+
   return `<div class="card-sm" style="margin-bottom:8px">
-    <div style="display:flex;justify-content:space-between;align-items:center">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
       <span style="font-size:12px;font-weight:700">${itemsSummary || 'Sipariş'}</span>
       <span class="tag tag-green" style="font-size:10px">₺${Number(order.total_amount).toLocaleString('tr-TR')}</span>
     </div>
-    <div style="font-size:10px;color:var(--muted);margin-top:4px">${new Date(order.created_at).toLocaleTimeString('tr-TR')} — Sipariş alındı, teşekkürler! 🎉</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;flex-wrap:wrap;gap:6px">
+      <div style="font-size:10px;color:var(--muted)">${new Date(order.created_at).toLocaleString('tr-TR')}</div>
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+        <span class="tag" style="font-size:10px">${STATUS_LABEL[order.status] || order.status}</span>
+        ${cancellable ? `<button class="btn btn-sm btn-ghost order-cancel-btn" data-order="${order.id}" title="İptal et"><i class="fas fa-ban"></i></button>` : ''}
+        ${next ? `<button class="btn btn-sm btn-gold order-advance-btn" data-order="${order.id}" data-next="${next}">${STATUS_LABEL[next]} <i class="fas fa-arrow-right"></i></button>` : ''}
+      </div>
+    </div>
+    ${(escrow || invoice || deliveryNote) ? `
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;padding-top:8px;border-top:1px dashed var(--border);font-size:10px;color:var(--muted)">
+        ${escrow ? `<span><i class="fas fa-vault" style="color:${escrow.status === 'HELD' ? 'var(--amber)' : escrow.status === 'RELEASED' ? 'var(--green)' : 'var(--red)'}"></i> Escrow: ${escrow.status === 'HELD' ? 'Bekliyor' : escrow.status === 'RELEASED' ? 'Serbest' : 'İade'} (₺${Number(escrow.net_amount).toLocaleString('tr-TR')} size)</span>` : ''}
+        ${invoice ? `<span><i class="fas fa-file-invoice"></i> Fatura: ${invoice.invoice_number}</span>` : ''}
+        ${deliveryNote ? `<span><i class="fas fa-truck"></i> İrsaliye: ${deliveryNote.document_no}</span>` : ''}
+      </div>
+    ` : ''}
   </div>`;
 }
 

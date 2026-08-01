@@ -350,10 +350,21 @@ export async function placeOrder(params: {
   return order;
 }
 
+export const ORDER_STATUS_LABEL: Record<string, string> = {
+  PAYMENT_PENDING: 'Ödeme Bekliyor',
+  CONFIRMED: 'Onaylandı',
+  PREPARING: 'Hazırlanıyor',
+  READY: 'Hazır',
+  SHIPPED: 'Kargoda',
+  DELIVERED: 'Teslim Edildi',
+  COMPLETED: 'Tamamlandı',
+  CANCELLED: 'İptal Edildi',
+};
+
 export async function getMyOrders(customerId: string) {
   const { data, error } = await supabase
     .from('store_orders')
-    .select('id, total_amount, status, created_at, stores(name)')
+    .select('id, total_amount, status, created_at, stores(name), escrow_transactions(status), store_order_invoices(invoice_number), delivery_notes(document_no)')
     .eq('customer_id', customerId)
     .order('created_at', { ascending: false })
     .limit(15);

@@ -15,7 +15,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { getCurrentPosition, getNearestStores, getAllStores, type NearbyStore } from '../lib/geo';
-import { getStoreProducts, placeOrder, getMyOrders, getCategories, getSectors, getProductVideo, getStoreActiveAuctions, type StoreProduct, type CartLine, type Category, type Sector, type StoreWholesaleAuction } from '../lib/dampingvar';
+import { getStoreProducts, placeOrder, getMyOrders, getCategories, getSectors, getProductVideo, getStoreActiveAuctions, ORDER_STATUS_LABEL, type StoreProduct, type CartLine, type Category, type Sector, type StoreWholesaleAuction } from '../lib/dampingvar';
 import VideoPopupModal from './VideoPopupModal';
 import StoreLiveViewer from './StoreLiveViewer';
 import LiveStream from './LiveStream';
@@ -514,12 +514,31 @@ export default function CustomerHome() {
         <div className="rounded-2xl p-5" style={CARD}>
           <p className="text-white font-extrabold text-sm mb-3">Siparişlerim</p>
           <div className="space-y-2">
-            {myOrders.slice(0, 10).map((o) => (
-              <div key={o.id} className="flex items-center justify-between text-xs">
-                <span className="text-[#A3B3D1] font-mono">₺{Number(o.total_amount).toFixed(2)}</span>
-                <span className="text-[#D4AF37] font-mono">{o.status}</span>
-              </div>
-            ))}
+            {myOrders.slice(0, 10).map((o: any) => {
+              const escrow = o.escrow_transactions?.[0];
+              const invoice = o.store_order_invoices?.[0];
+              const deliveryNote = o.delivery_notes?.[0];
+              return (
+                <div key={o.id} className="rounded-lg p-2.5" style={{ background: '#0B1220', border: '1px solid #1E2A42' }}>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-[#A3B3D1] font-mono">{o.stores?.name ?? ''} · ₺{Number(o.total_amount).toFixed(2)}</span>
+                    <span className="text-[#D4AF37] font-mono font-bold">{ORDER_STATUS_LABEL[o.status] ?? o.status}</span>
+                  </div>
+                  {(escrow || invoice || deliveryNote) && (
+                    <div className="flex gap-3 flex-wrap mt-1.5 text-[10px] text-[#5E7090] font-mono">
+                      {escrow && (
+                        <span>
+                          <i className="fas fa-vault mr-1" />
+                          Escrow: {escrow.status === 'HELD' ? 'Bekliyor' : escrow.status === 'RELEASED' ? 'Serbest bırakıldı' : 'İade edildi'}
+                        </span>
+                      )}
+                      {invoice && <span><i className="fas fa-file-invoice mr-1" />Fatura: {invoice.invoice_number}</span>}
+                      {deliveryNote && <span><i className="fas fa-truck mr-1" />İrsaliye: {deliveryNote.document_no}</span>}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

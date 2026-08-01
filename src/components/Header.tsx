@@ -23,6 +23,7 @@ const ROLE_ROUTES: Record<string, string> = {
 interface HeaderProps {
   cartCount: number;
   onCartToggle: () => void;
+  hideCart?: boolean;
 }
 
 const tickerItems = [
@@ -35,7 +36,7 @@ const tickerItems = [
 
 type AuthModalMode = 'login' | 'register' | 'forgot';
 
-export default function Header({ cartCount, onCartToggle }: HeaderProps) {
+export default function Header({ cartCount, onCartToggle, hideCart }: HeaderProps) {
   const { user, profile, loading } = useAuth();
   const navigate = useNavigate();
   const [activeViewers, setActiveViewers] = useState(3847);
@@ -159,20 +160,25 @@ export default function Header({ cartCount, onCartToggle }: HeaderProps) {
 
           {/* Right Actions */}
           <div className="flex items-center gap-3 shrink-0">
-            {/* Sepet */}
-            <button
-              onClick={onCartToggle}
-              className="relative flex items-center gap-2 px-4 py-2 rounded-lg font-mono text-xs font-black cursor-pointer transition-all btn-glow"
-              style={{ background: 'linear-gradient(135deg, #D4AF37, #F5D76E)', color: '#000' }}
-            >
-              <i className="fas fa-shopping-bag"></i>
-              <span className="hidden sm:inline">SEPETİM</span>
-              {cartCount > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] w-5 h-5 rounded-full flex items-center justify-center font-bold badge-bounce">
-                  {cartCount}
-                </span>
-              )}
-            </button>
+            {/* Sepet — SADECE eski (customer olmayan/misafir) ProductGrid akışı için.
+                Customer rolünde artık kendi mağaza sepeti CustomerHome içinde SÜREKLİ
+                görünür (ayrı bir açma/kapama butonuna gerek yok) — bu yüzden gizleniyor,
+                aksi halde iki farklı, birbirinden habersiz sepet aynı anda görünürdü. */}
+            {!hideCart && (
+              <button
+                onClick={onCartToggle}
+                className="relative flex items-center gap-2 px-4 py-2 rounded-lg font-mono text-xs font-black cursor-pointer transition-all btn-glow"
+                style={{ background: 'linear-gradient(135deg, #D4AF37, #F5D76E)', color: '#000' }}
+              >
+                <i className="fas fa-shopping-bag"></i>
+                <span className="hidden sm:inline">SEPETİM</span>
+                {cartCount > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] w-5 h-5 rounded-full flex items-center justify-center font-bold badge-bounce">
+                    {cartCount}
+                  </span>
+                )}
+              </button>
+            )}
 
             {/* Auth Dropdown */}
             <div className="relative" ref={dropdownRef}>

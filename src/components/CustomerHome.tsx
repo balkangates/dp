@@ -19,6 +19,7 @@ import { getStoreProducts, placeOrder, getMyOrders, getCategories, getSectors, g
 import VideoPopupModal from './VideoPopupModal';
 import StoreLiveViewer from './StoreLiveViewer';
 import LiveStream from './LiveStream';
+import ProductSpotlight from './ProductSpotlight';
 
 function timeLeft(endTime: string) {
   const ms = new Date(endTime).getTime() - Date.now();
@@ -160,6 +161,7 @@ function StoreSelector({ onSelect }: { onSelect: (store: NearbyStore) => void })
 function ProductCard({ product, onAdd }: { product: StoreProduct; onAdd: (p: StoreProduct) => void }) {
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [loadingVideo, setLoadingVideo] = useState(false);
+  const [justAdded, setJustAdded] = useState(false);
 
   const openDetail = async () => {
     setLoadingVideo(true);
@@ -171,34 +173,74 @@ function ProductCard({ product, onAdd }: { product: StoreProduct; onAdd: (p: Sto
     }
   };
 
+  const handleAdd = () => {
+    onAdd(product);
+    setJustAdded(true);
+    setTimeout(() => setJustAdded(false), 1200);
+  };
+
+  const lowStock = product.stock_qty > 0 && product.stock_qty <= 5;
+
   return (
-    <div className="rounded-xl p-3" style={CARD}>
-      {product.image_url && (
-        <img src={product.image_url} alt={product.name} className="w-full h-28 object-cover rounded-lg mb-2" />
-      )}
-      <p className="text-white text-xs font-bold">{product.name} {product.unit_size}{product.unit}</p>
-      {product.category_name && <p className="text-[#5E7090] text-[10px] font-mono">{product.category_name}</p>}
-      <div className="flex items-center justify-between mt-2 gap-2">
-        <span className="text-[#D4AF37] font-mono font-extrabold text-sm">₺{product.price.toFixed(2)}</span>
-        <div className="flex gap-1.5">
-          {product.has_video && (
-            <button
-              onClick={openDetail}
-              disabled={loadingVideo}
-              className="rounded-lg px-2.5 py-1 text-[10px] font-bold border border-[#2A3650] text-[#5E7090] hover:text-[#D4AF37] hover:border-[#D4AF37]/40"
-            >
-              {loadingVideo ? '…' : 'Detay'}
-            </button>
-          )}
+    <div
+      className="group rounded-xl overflow-hidden transition-all duration-200 hover:-translate-y-0.5"
+      style={{ ...CARD, boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }}
+      onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'rgba(212,175,55,0.55)')}
+      onMouseLeave={(e) => (e.currentTarget.style.borderColor = '#2A3650')}
+    >
+      <div className="relative">
+        {product.image_url ? (
+          <img src={product.image_url} alt={product.name} className="w-full h-32 object-cover" />
+        ) : (
+          <div className="w-full h-32 flex items-center justify-center bg-[#0B1220]">
+            <i className="fas fa-image text-[#2A3650] text-2xl" />
+          </div>
+        )}
+
+        {product.has_video && (
           <button
-            onClick={() => onAdd(product)}
-            className="rounded-lg px-3 py-1 text-xs font-extrabold"
-            style={{ background: 'linear-gradient(135deg,#D4AF37,#F5D76E)', color: '#000' }}
+            onClick={openDetail}
+            disabled={loadingVideo}
+            className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 backdrop-blur-sm flex items-center justify-center text-white text-[10px] hover:bg-black/80 transition-colors"
+            title="Tanıtım videosunu izle"
           >
-            +
+            <i className={loadingVideo ? 'fas fa-spinner fa-spin' : 'fas fa-play'} />
           </button>
-        </div>
+        )}
+
+        {lowStock && (
+          <span className="absolute top-2 left-2 bg-red-500/90 text-white text-[9px] font-black font-mono px-2 py-0.5 rounded">
+            SON {product.stock_qty} ADET
+          </span>
+        )}
       </div>
+
+      <div className="p-3">
+        <p className="text-white text-xs font-bold leading-snug line-clamp-2 min-h-[2.2em]">
+          {product.name} {product.unit_size}{product.unit}
+        </p>
+        {product.category_name && (
+          <p className="text-[#5E7090] text-[10px] font-mono mt-0.5">{product.category_name}</p>
+        )}
+
+        <div className="flex items-center justify-between mt-2.5">
+          <span className="text-[#D4AF37] font-mono font-black text-base">₺{product.price.toFixed(2)}</span>
+        </div>
+
+        <button
+          onClick={handleAdd}
+          className="w-full mt-2.5 rounded-lg py-2 text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all"
+          style={
+            justAdded
+              ? { background: '#10B981', color: '#fff' }
+              : { background: 'linear-gradient(135deg,#D4AF37,#F5D76E)', color: '#000' }
+          }
+        >
+          <i className={justAdded ? 'fas fa-check' : 'fas fa-cart-plus'} />
+          {justAdded ? 'Sepete Eklendi' : 'Sepete Ekle'}
+        </button>
+      </div>
+
       {videoUrl && (
         <VideoPopupModal videoUrl={videoUrl} title={product.name} onClose={() => setVideoUrl(null)} />
       )}
@@ -322,6 +364,7 @@ export default function CustomerHome() {
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [cart, setCart] = useState<CartLine[]>([]);
   const [myOrders, setMyOrders] = useState<any[]>([]);
+  const [spotlight, setSpotlight] = useState<{ product: StoreProduct; videoUrl: string | null } | null>(null);
 
   const loadProducts = useCallback(async (storeId: string, categoryId?: string, sectorId?: string) => {
     const p = await getStoreProducts(storeId, categoryId, sectorId);
@@ -363,23 +406,38 @@ export default function CustomerHome() {
       }
       return [...prev, { store_product_id: p.id, product_name: p.name, unit_price: p.price, quantity: 1 }];
     });
+    // Sepete eklenince canlı yayın alanında bu ürünün tanıtım videosu öne çıksın.
+    setSpotlight({ product: p, videoUrl: null });
+    if (p.has_video) {
+      getProductVideo(p.id)
+        .then((v) => setSpotlight({ product: p, videoUrl: v?.video_url ?? null }))
+        .catch(() => {});
+    }
   };
 
   if (!selectedStore) return <StoreSelector onSelect={setSelectedStore} />;
 
   return (
     <div className="space-y-5">
-      <button onClick={() => setSelectedStore(null)} className="text-[#5E7090] text-xs font-mono">
+      <button onClick={() => { setSelectedStore(null); setSpotlight(null); }} className="text-[#5E7090] text-xs font-mono">
         ← Mağaza değiştir
       </button>
       <h2 className="text-white font-black text-xl">{selectedStore.name}</h2>
 
       <div className="grid grid-cols-1 lg:grid-cols-[65%_35%] gap-5">
-        <StoreLiveViewer
-          storeId={selectedStore.store_id}
-          storeName={selectedStore.name}
-          initialIsLive={selectedStore.is_live}
-        />
+        {spotlight ? (
+          <ProductSpotlight
+            product={spotlight.product}
+            videoUrl={spotlight.videoUrl}
+            onBack={() => setSpotlight(null)}
+          />
+        ) : (
+          <StoreLiveViewer
+            storeId={selectedStore.store_id}
+            storeName={selectedStore.name}
+            initialIsLive={selectedStore.is_live}
+          />
+        )}
         <LiveStream storeId={selectedStore.store_id} storeName={selectedStore.name} />
       </div>
 

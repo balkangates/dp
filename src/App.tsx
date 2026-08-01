@@ -147,7 +147,7 @@ function AppInner() {
 
   return (
     <div className="min-h-screen" style={{ background: '#0A0E1A' }}>
-      <Header cartCount={cartCount} onCartToggle={() => setCartOpen(o => !o)} />
+      <Header cartCount={cartCount} onCartToggle={() => setCartOpen(o => !o)} hideCart={profile?.role === 'customer'} />
 
       <main className="max-w-[1600px] mx-auto px-4 py-5 space-y-6">
         {/* Stats Bar — platform_stats tablosundan (Realtime) */}
@@ -214,15 +214,19 @@ function AppInner() {
         </div>
       </footer>
 
-      {/* Cart Sidebar — orders + payments + escrow_wallets bağlı */}
-      <CartSidebar
-        isOpen={cartOpen}
-        onClose={() => setCartOpen(false)}
-        items={cartItems}
-        onUpdateQty={handleUpdateQty}
-        onRemove={handleRemove}
-        onOrderComplete={handleOrderComplete}
-      />
+      {/* Cart Sidebar — SADECE eski akış (customer olmayan roller) için. Customer'ın
+          KENDİ mağaza sepeti (store_products/store_orders bazlı) artık CustomerHome
+          içinde — bu ikisi ayrı tablolara yazan, birbirinden habersiz iki sepetti. */}
+      {profile?.role !== 'customer' && (
+        <CartSidebar
+          isOpen={cartOpen}
+          onClose={() => setCartOpen(false)}
+          items={cartItems}
+          onUpdateQty={handleUpdateQty}
+          onRemove={handleRemove}
+          onOrderComplete={handleOrderComplete}
+        />
+      )}
     </div>
   );
 }

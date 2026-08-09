@@ -1,24 +1,25 @@
 // supabase/functions/live-token/index.ts
 // ─────────────────────────────────────────────────────────────────────────
-// LiveKit oda token'ı üretir. İKİ rol destekler:
+// LiveKit oda token'ı üretir. ÜÇ rol destekler:
 //
-//   role: 'publisher' (varsayılan, param verilmezse) — SADECE mağaza sahibi
-//     (dealer) çağırabilir. dashboard.html → modules/live-sales.js
-//     "Canlıya Geç" butonuna basıldığında bunu çağırır, kamerasını
-//     "store-<store_id>" odasına yayınlar.
+//   role: 'publisher' (varsayılan) — SADECE mağaza sahibi (dealer).
+//     Genel canlı yayın odası "store-<store_id>"ya kamerasını yayınlar.
 //
-//   role: 'viewer' — giriş yapmış herhangi bir müşteri çağırabilir, SADECE
-//     mağaza gerçekten canlıdaysa (stores.is_live = true) token üretir.
-//     src/lib/supabase.ts → getLiveViewerToken() bunu çağırır
-//     (CustomerHome.tsx → StoreLiveViewer.tsx).
+//   role: 'viewer' — giriş yapmış herhangi bir müşteri, mağaza
+//     is_live=true iken genel yayını SADECE izler (canPublish=false).
 //
-// Gerekli secret'lar (zaten Supabase → Edge Functions → Secrets altında
-// tanımlı): LIVEKIT_API_KEY, LIVEKIT_API_SECRET, LIVEKIT_URL.
-// Ek olarak SUPABASE_URL / SUPABASE_ANON_KEY (Supabase Edge Functions'ta
-// bunlar otomatik olarak ortam değişkeni olarak sağlanır).
+//   role: 'call' — FAZ 3: BİREBİR görüntülü görüşme. call_request_id
+//     zorunlu; sadece o call_requests satırının customer_id'si YA DA
+//     ilgili mağazanın owner_id'si token alabilir, VE call_requests.status
+//     'accepted' olmalı. Oda adı "call-<call_request_id>" — genel yayın
+//     odasından tamamen ayrı, sadece bu iki kişi girebilir, İKİSİ DE
+//     canPublish=true (karşılıklı görüntü/ses).
 //
-// Deploy:
-//   supabase functions deploy live-token
+// Gerekli secret'lar (Supabase → Edge Functions → Secrets):
+// LIVEKIT_API_KEY, LIVEKIT_API_SECRET, LIVEKIT_URL, SUPABASE_URL,
+// SUPABASE_ANON_KEY.
+//
+// Deploy: supabase functions deploy live-token
 // ─────────────────────────────────────────────────────────────────────────
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -47,9 +48,9 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {
-    const { store_id, role } = await req.json();
-    if (!store_id) return json({ error: 'store_id gerekli' }, 400);
-    const wantRole: 'publisher' | 'viewer' = role === 'viewer' ? 'viewer' : 'publisher';
+    const { store_id, role, call_request_id } = await req.json();
+    const wantRole: 'publisher' | 'viewer' | 'call' =
+      role === 'viewer' ? 'viewer' : role === 'call' ? 'call' : 'publisher';
 
     const authHeader = req.headers.get('Authorization') ?? '';
     const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
@@ -58,6 +59,43 @@ Deno.serve(async (req) => {
 
     const { data: userData } = await supabase.auth.getUser();
     const user = userData?.user ?? null;
+
+    // ── FAZ 3: birebir görüntülü görüşme ────────────────────────────────
+    if (wantRole === 'call') {
+      if (!call_request_id) return json({ error: 'call_request_id gerekli' }, 400);
+      if (!user) return json({ error: 'Giriş yapmalısınız' }, 401);
+
+      const { data: call, error: callErr } = await supabase
+        .from('call_requests')
+        .select('id, store_id, customer_id, status, stores(owner_id, name)')
+        .eq('id', call_request_id)
+        .maybeSingle();
+      if (callErr || !call) return json({ error: 'Görüşme isteği bulunamadı' }, 404);
+      if (call.status !== 'accepted') return json({ error: 'Görüşme henüz kabul edilmedi' }, 409);
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const ownerId = (call.stores as any)?.owner_id;
+      const isCustomer = user.id === call.customer_id;
+      const isDealer = user.id === ownerId;
+      if (!isCustomer && !isDealer) {
+        return json({ error: 'Bu görüşmeye katılma yetkiniz yok' }, 403);
+      }
+
+      const identity = isDealer ? `dealer-${user.id}` : `customer-${user.id}`;
+      const roomName = `call-${call.id}`;
+      const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
+        identity,
+        name: isDealer ? 'Satış Temsilcisi' : (user.email ?? 'Müşteri'),
+        ttl: '2h',
+      });
+      // İki taraf da hem yayınlar hem izler — gerçek birebir görüntülü görüşme.
+      at.addGrant({ room: roomName, roomJoin: true, canPublish: true, canSubscribe: true, canPublishData: true });
+      const token = await at.toJwt();
+      return json({ token, ws_url: LIVEKIT_URL, room: roomName });
+    }
+
+    // ── Genel canlı yayın (publisher/viewer) — mevcut davranış ──────────
+    if (!store_id) return json({ error: 'store_id gerekli' }, 400);
 
     const { data: store, error: storeErr } = await supabase
       .from('stores')
@@ -71,8 +109,6 @@ Deno.serve(async (req) => {
     let canPublish: boolean;
 
     if (wantRole === 'publisher') {
-      // Sadece mağaza sahibi yayın açabilir — DB seviyesinde de (RLS/RPC) zorlanıyor,
-      // burada ayrıca kontrol ediyoruz çünkü LiveKit token'ı DB'nin bilmediği bir yetki.
       if (!user || user.id !== store.owner_id) {
         return json({ error: 'Sadece mağaza sahibi yayın açabilir' }, 403);
       }
@@ -83,8 +119,6 @@ Deno.serve(async (req) => {
       name = 'Bayi';
       canPublish = true;
     } else {
-      // İzleyici — giriş yapmış olmalı (misafir izleme şu an desteklenmiyor,
-      // müşteri akışı zaten role='customer' girişini zorunlu kılıyor).
       if (!user) {
         return json({ error: 'İzlemek için giriş yapmalısınız' }, 401);
       }
@@ -97,18 +131,8 @@ Deno.serve(async (req) => {
     }
 
     const roomName = `store-${store.id}`;
-    const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
-      identity,
-      name,
-      ttl: '6h',
-    });
-    at.addGrant({
-      room: roomName,
-      roomJoin: true,
-      canPublish,
-      canSubscribe: true,
-      canPublishData: true,
-    });
+    const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, { identity, name, ttl: '6h' });
+    at.addGrant({ room: roomName, roomJoin: true, canPublish, canSubscribe: true, canPublishData: true });
     const token = await at.toJwt();
 
     return json({ token, ws_url: LIVEKIT_URL, room: roomName });

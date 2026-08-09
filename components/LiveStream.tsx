@@ -1,0 +1,699 @@
+'use client';
+
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/components/AuthProvider';
+
+// ─── Sabitler ──────────────────────────────────────────────────────────────────
+const USER_COLORS = [
+  '#38BDF8', '#10B981', '#D4AF37', '#FF007A',
+  '#A78BFA', '#F59E0B', '#14B8A6', '#FB923C',
+];
+const MAX_OVERLAY_MSGS = 6;
+
+// Eskiden burada TEK ve SABİT bir "live yayın" conversation ID'si vardı
+// (fix_live_conversation_v2.sql) — hangi bayi seçilirse seçilsin herkes
+// aynı genel sohbeti görüyordu. Artık storeId verilirse (bkz.
+// get_or_create_store_live_conversation RPC — fixes/fix_store_live_chat.sql)
+// HER MAĞAZA kendi sohbetini alıyor. storeId verilmezse (App.tsx'teki eski
+// genel hero bölümü — sadece customer olmayan roller için) eski sabit
+// ID'ye geri düşülüyor, geriye dönük uyumluluk için.
+const LEGACY_GLOBAL_CONV_ID = 'e3fc6ac0-5e8f-4bb6-9aa1-ca1d84ddaf73';
+
+// ─── Tip ────────────────────────────────────────────────────────────────────────
+interface LiveMessage {
+  id: string;
+  sender_id: string | null;
+  message: string;
+  created_at: string;
+  is_system_message: boolean;
+  sender_name: string;
+  sender_rumuz: string | null;  // ← profiles.rumuz
+  sender_color: string;
+  message_type: string;
+}
+
+// ─── DB satırı → LiveMessage ────────────────────────────────────────────────────
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapMsg(row: Record<string, any>, colorMap: Record<string, string>): LiveMessage {
+  const profile = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles;
+  const sid = row.sender_id ?? 'sys';
+  if (!colorMap[sid]) {
+    colorMap[sid] = USER_COLORS[Object.keys(colorMap).length % USER_COLORS.length];
+  }
+  return {
+    id:               String(row.id),
+    sender_id:        row.sender_id ?? null,
+    message:          row.message ?? '',
+    created_at:       row.created_at,
+    is_system_message: row.is_system_message ?? false,
+    sender_name:
+      profile?.full_name ??
+      profile?.company_name ??
+      (row.is_system_message ? 'Sistem' : 'Kullanıcı'),
+    sender_rumuz: profile?.rumuz ?? null,  // ← rumuz alanı
+    sender_color: colorMap[sid],
+    message_type: row.message_type ?? 'live',
+  };
+}
+
+// ─── Ana Bileşen ────────────────────────────────────────────────────────────────
+export default function LiveStream({
+  storeId,
+  storeName,
+  isOwnerView = false,
+}: {
+  storeId?: string;
+  storeName?: string;
+  // Bayinin KENDİ mağazasını görüntülediği durum (app/dealer/live/page.tsx).
+  // true ise: "X katıldı" karşılama mesajı gönderilmez (bayi kendi
+  // sayfasına girince kendine hoşgeldin demesin diye).
+  isOwnerView?: boolean;
+} = {}) {
+  const { user, profile } = useAuth();
+
+  const colorMapRef = useRef<Record<string, string>>({});
+  const anonIdRef = useRef<string>(`anon_${Math.random().toString(36).slice(2)}`);
+
+  // storeId verilmişse o mağazanın kendi sohbeti çözülene kadar bekle —
+  // verilmemişse (eski genel hero) hemen sabit ID kullanılır.
+  const [conversationId, setConversationId] = useState<string | null>(storeId ? null : LEGACY_GLOBAL_CONV_ID);
+
+  const [messages, setMessages]     = useState<LiveMessage[]>([]);
+  const [input, setInput]           = useState('');
+  const [sending, setSending]       = useState(false);
+  const [sendError, setSendError]   = useState<string | null>(null);
+  const [viewerCount, setViewerCount] = useState(0);
+  const [showEmoji, setShowEmoji]   = useState(false);
+  const [floatTrigger, setFloatTrigger] = useState<{emoji:string;id:number}|null>(null);
+
+  const inputRef = useRef<HTMLInputElement>(null);
+  const emojiRef = useRef<HTMLDivElement>(null);
+
+  const EMOJI_LIST = [
+    '❤️','🔥','😍','👏','💰','🎉','⭐','💎',
+    '😂','🤣','😊','🥳','👍','💪','🙏','😎',
+    '🤑','💯','🚀','✅','😮','🤯','😆','🥰',
+  ];
+
+  // Mağaza değişince o mağazanın sohbet conversation'ını bul/oluştur.
+  useEffect(() => {
+    if (!storeId) { setConversationId(LEGACY_GLOBAL_CONV_ID); return; }
+    let cancelled = false;
+    setConversationId(null);
+    setMessages([]);
+    supabase
+      .rpc('get_or_create_store_live_conversation', { p_store_id: storeId })
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) {
+          console.error('[LiveStream] mağaza sohbeti oluşturulamadı:', error);
+          return;
+        }
+        setConversationId(data as string);
+      });
+    return () => { cancelled = true; };
+  }, [storeId]);
+
+  // Emoji picker dışına tıklayınca kapat
+  useEffect(() => {
+    function handleOut(e: MouseEvent) {
+      if (emojiRef.current && !emojiRef.current.contains(e.target as Node)) {
+        setShowEmoji(false);
+      }
+    }
+    document.addEventListener('mousedown', handleOut);
+    return () => document.removeEventListener('mousedown', handleOut);
+  }, []);
+
+  // Emoji input'a ekle
+  const insertEmoji = useCallback((emoji: string) => {
+    setInput(prev => prev + emoji);
+    setFloatTrigger({ emoji, id: Date.now() });
+    inputRef.current?.focus();
+  }, []);
+
+  // ── 1. Geçmiş mesajları çek — message_type = 'live' ─────────────────────────
+  useEffect(() => {
+    if (!conversationId) return;
+    let cancelled = false;
+
+    async function fetchMessages() {
+      const { data, error } = await supabase
+        .from('messages')
+        .select(`
+          id,
+          sender_id,
+          message,
+          created_at,
+          is_system_message,
+          message_type,
+          profiles:sender_id (
+            full_name,
+            company_name,
+            rumuz
+          )
+        `)
+        .eq('message_type', 'live')
+        .eq('conversation_id', conversationId)  // sadece bu mağazanın canlı sohbeti
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      if (cancelled) return;
+      if (error) {
+        console.error('[LiveStream] fetch error:', error.message, error.code);
+        return;
+      }
+      if (data && data.length > 0) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const mapped = (data as Record<string, any>[])
+          .reverse()
+          .map(row => mapMsg(row, colorMapRef.current));
+        setMessages(mapped);
+      }
+    }
+
+    fetchMessages();
+    return () => { cancelled = true; };
+  }, [conversationId]);
+
+  // ── 2. Realtime — conversation_id filtresi ───────────────────────────────────
+  // ÖNEMLİ: Supabase Realtime'ın postgres_changes filtresi TEK bir sütun
+  // koşulu kabul eder. Eskiden burada
+  //   filter: `message_type=eq.live&conversation_id=eq.${conversationId}`
+  // gibi "&" ile iki koşul birleştirilmeye çalışılıyordu — bu GEÇERSİZ bir
+  // sözdizimi (Realtime bunu "message_type sütunu tam olarak bu uzun
+  // string'e eşit mi" diye yorumluyor, hiçbir zaman eşleşmiyor). Sonuç:
+  // mesajlar DB'ye doğru yazılıyordu ama INSERT event'i HİÇBİR ZAMAN
+  // tetiklenmiyordu — ne bayi ne müşteri, karşı tarafın yeni mesajını
+  // sayfayı yenilemeden göremiyordu. Artık sadece conversation_id'ye göre
+  // filtreleniyor, message_type kontrolü aşağıda JS tarafında yapılıyor.
+  useEffect(() => {
+    if (!conversationId) return;
+    const channel = supabase
+      .channel(`livestream_chat_${conversationId}`)
+      .on(
+        'postgres_changes',
+        {
+          event:  'INSERT',
+          schema: 'public',
+          table:  'messages',
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        async (payload) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const row = payload.new as Record<string, any>;
+
+          // Bu sohbette live dışı bir mesaj tipi varsa (ör. ileride
+          // eklenebilecek özel mesaj tipleri) yok say.
+          if (row.message_type !== 'live') return;
+
+          // sender_id yoksa ve sistem mesajı değilse yok say
+          if (!row.sender_id && !row.is_system_message) return;
+
+          let profileData: { full_name?: string; company_name?: string; rumuz?: string } | null = null;
+          if (row.sender_id) {
+            const { data } = await supabase
+              .from('profiles')
+              .select('full_name, company_name, rumuz')
+              .eq('id', row.sender_id)
+              .single();
+            profileData = data;
+          }
+
+          const newMsg = mapMsg({ ...row, profiles: profileData }, colorMapRef.current);
+
+          setMessages(prev => {
+            // optimistic duplicate temizle
+            const clean = prev.filter(m => !m.id.startsWith('opt_'));
+            if (clean.some(m => m.id === newMsg.id)) return prev;
+            return [...clean, newMsg].slice(-MAX_OVERLAY_MSGS);
+          });
+        },
+      )
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[LiveStream] Realtime channel error');
+        }
+      });
+
+    return () => { supabase.removeChannel(channel); };
+  }, [conversationId]);
+
+  // ── 3. İzleyici sayısı ──────────────────────────────────────────────────────
+  // storeId YOKSA (eski genel hero): eski davranış — platform genelindeki
+  // aktif kullanıcıları 30sn'de bir polluyor.
+  // storeId VARSA: Supabase Realtime PRESENCE ile SADECE bu mağazanın canlı
+  // sayfasında o an açık olan sekmeleri anlık sayıyoruz — polling yok,
+  // katılan/ayrılan olunca 'sync' event'i anında tetikleniyor.
+  useEffect(() => {
+    if (storeId) return;
+    async function fetchViewers() {
+      const { count } = await supabase
+        .from('active_users')
+        .select('*', { count: 'exact', head: true })
+        .eq('is_active', true);
+      if (count !== null) setViewerCount(count);
+    }
+    fetchViewers();
+    const iv = setInterval(fetchViewers, 30_000);
+    return () => clearInterval(iv);
+  }, [storeId]);
+
+  useEffect(() => {
+    if (!storeId) return;
+    const presenceKey = user?.id ?? anonIdRef.current;
+    const channel = supabase.channel(`store_presence_${storeId}`, {
+      config: { presence: { key: presenceKey } },
+    });
+    channel
+      .on('presence', { event: 'sync' }, () => {
+        setViewerCount(Object.keys(channel.presenceState()).length);
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await channel.track({ online_at: new Date().toISOString() });
+        }
+      });
+    return () => { supabase.removeChannel(channel); };
+  }, [storeId, user?.id]);
+
+  // ── 3b. Katılım karşılama mesajı ─────────────────────────────────────────────
+  // Müşteri mağazanın canlı sayfasına girince sohbete otomatik bir sistem
+  // mesajı düşer: "Ahmet K. üyemiz canlı satış sayfamıza katıldı,
+  // hoşgeldiniz Ahmet K." — bayi kendi sayfasına (isOwnerView) girdiğinde
+  // VEYA storeId'siz eski genel hero'da gönderilmez. Aynı tarayıcı
+  // oturumunda tekrar tekrar (her yeniden render/route değişiminde) spam
+  // olmasın diye sessionStorage ile mağaza+kullanıcı başına TEK seferle
+  // sınırlandı.
+  useEffect(() => {
+    if (!storeId || !conversationId || !user || isOwnerView) return;
+    if (typeof window === 'undefined') return;
+    const flagKey = `dv_joined_${conversationId}_${user.id}`;
+    if (sessionStorage.getItem(flagKey)) return;
+    sessionStorage.setItem(flagKey, '1');
+
+    const rawName = profile?.full_name ?? profile?.company_name ?? profile?.rumuz ?? 'Bir üye';
+    const parts = rawName.trim().split(/\s+/);
+    const displayName = parts.length >= 2 ? `${parts[0]} ${parts[parts.length - 1].charAt(0).toUpperCase()}.` : rawName.trim();
+
+    supabase.from('messages').insert({
+      sender_id: user.id,
+      message: `${displayName} üyemiz canlı satış sayfamıza katıldı, hoşgeldiniz ${displayName}.`,
+      message_type: 'live',
+      is_read: true,
+      is_system_message: true,
+      conversation_id: conversationId,
+    }).then(({ error }) => {
+      if (error) console.error('[LiveStream] katılım mesajı gönderilemedi:', error.message);
+    });
+  }, [storeId, conversationId, user, profile, isOwnerView]);
+
+  // ── 4. Mesaj gönder ─────────────────────────────────────────────────────────
+  const sendMessage = useCallback(async () => {
+    const text = input.trim();
+
+    // Giriş yapılmamışsa hata göster
+    if (!user?.id) {
+      setSendError('Mesaj göndermek için giriş yapmanız gerekiyor.');
+      setTimeout(() => setSendError(null), 3000);
+      return;
+    }
+    if (!text || sending) return;
+    if (!conversationId) {
+      setSendError('Sohbet hazırlanıyor, birkaç saniye sonra tekrar deneyin.');
+      setTimeout(() => setSendError(null), 3000);
+      return;
+    }
+
+    setSending(true);
+    setSendError(null);
+    setInput('');
+
+    // Optimistic mesaj — rumuz dahil
+    const rumuz = profile?.rumuz ?? null;
+    const optimisticId = `opt_${Date.now()}`;
+    const optimistic: LiveMessage = {
+      id:               optimisticId,
+      sender_id:        user.id,
+      message:          text,
+      created_at:       new Date().toISOString(),
+      is_system_message: false,
+      sender_name:      profile?.full_name ?? profile?.company_name ?? 'Sen',
+      sender_rumuz:     rumuz,
+      sender_color:     colorMapRef.current[user.id] ?? '#D4AF37',
+      message_type:     'live',
+    };
+    setMessages(prev => [...prev.slice(-(MAX_OVERLAY_MSGS - 1)), optimistic]);
+
+    // ── INSERT ──────────────────────────────────────────────────────────────
+    // receiver_id  → sütun yok, INSERT'e dahil etme
+    // message_type → 'live'  (canlı yayın mesajı)
+    // is_read      → TRUE    (genel yayın, okunmadı takibi yok)
+    // ── conversation_id zorunlu ─────────────────────────────────────────────
+    // messages tablosundaki trigger, INSERT sonrası conversation_participants'a
+    // (conversation_id, user_id) yazar. user_id NOT NULL olduğu için
+    // conversation_id boş giderse trigger NULL yazar → hata.
+    // Çözüm: live mesajlar için sender_id'yi conversation_id olarak kullan.
+    // messages.conversation_id FK → conversations tablosuna bağlı
+    // message_type='live' olunca auto_create_conversation trigger'ı atlar
+    // conversation_id göndermiyoruz — trigger NULL'u geçiyor
+    const { error } = await supabase.from('messages').insert({
+      sender_id:        user.id,
+      message:          text,
+      message_type:     'live',
+      is_read:          true,
+      is_system_message: false,
+      conversation_id:  conversationId,  // FK zorunlu — bu mağazanın canlı sohbeti
+      // receiver_id: yok → genel yayın
+    });
+
+    if (error) {
+      console.error('[LiveStream] insert error:', error.message, error.code, error.details);
+      // Rollback optimistic
+      setMessages(prev => prev.filter(m => m.id !== optimisticId));
+      setInput(text);
+      setSendError('Mesaj gönderilemedi: ' + error.message);
+      setTimeout(() => setSendError(null), 4000);
+    }
+
+    setSending(false);
+    setTimeout(() => inputRef.current?.focus(), 50);
+  }, [input, user, profile, sending, conversationId]);
+
+  const handleKey = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+    },
+    [sendMessage],
+  );
+
+  // ── Görünen isim: rumuz varsa rumuz, yoksa ad ────────────────────────────────
+  function displayName(msg: LiveMessage, isSelf: boolean) {
+    if (isSelf) return 'Sen';
+    return msg.sender_rumuz ?? msg.sender_name;
+  }
+
+  // ─── Render ──────────────────────────────────────────────────────────────────
+  return (
+    <div
+      className="relative w-full rounded-2xl overflow-hidden border border-[#2A3650]"
+      style={storeId ? { minHeight: 260, background: '#0B1220' } : { aspectRatio: '16/9', background: '#000' }}
+    >
+      {!storeId && (
+        <>
+          {/* ── Video (dekoratif atmosfer — sabit stok görüntü) ── */}
+          <video className="absolute inset-0 w-full h-full object-cover" autoPlay loop muted playsInline>
+            <source src="https://videos.pexels.com/video-files/6833913/6833913-hd_1920_1080_25fps.mp4" type="video/mp4" />
+          </video>
+
+          {/* Degrade katmanlar */}
+          <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/70 pointer-events-none" />
+          <div className="absolute inset-0 bg-gradient-to-r from-black/20 via-transparent to-transparent pointer-events-none" />
+        </>
+      )}
+
+      {/* ── Üst rozetler ── */}
+      <div className="absolute top-3 left-3 right-3 z-20 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          {storeId ? (
+            <>
+              <span className="flex items-center gap-1.5 bg-black/40 text-white px-3 py-1 rounded-lg text-[11px] font-bold backdrop-blur-sm">
+                <i className="fas fa-comments" style={{ color: '#D4AF37' }} />
+                {storeName ? `${storeName} — Canlı Sohbet` : 'Canlı Sohbet'}
+              </span>
+              <span className="flex items-center gap-1.5 bg-black/40 text-white px-2.5 py-1 rounded-lg text-[11px] font-mono border border-white/10 backdrop-blur-sm">
+                <i className="fas fa-eye text-[#38BDF8]" />
+                {viewerCount > 0 ? viewerCount.toLocaleString('tr-TR') : '—'}
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="flex items-center gap-1.5 bg-red-600/80 text-white px-3 py-1 rounded-lg text-[11px] font-bold tracking-widest backdrop-blur-sm">
+                <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
+                CANLI YAYIN
+              </span>
+              <span className="flex items-center gap-1.5 bg-black/40 text-white px-3 py-1 rounded-lg text-[11px] font-mono border border-white/10 backdrop-blur-sm">
+                <i className="fas fa-eye text-[#38BDF8]" />
+                {viewerCount > 0 ? viewerCount.toLocaleString('tr-TR') : '—'}
+              </span>
+              <span className="hidden sm:flex items-center gap-1.5 bg-black/40 text-white px-3 py-1 rounded-lg text-[11px] font-mono border border-white/10 backdrop-blur-sm">
+                <i className="fas fa-signal text-[#10B981]" />
+                HD 1080p
+              </span>
+            </>
+          )}
+        </div>
+        <div className="flex gap-1.5">
+          {['❤️', '🔥', '👏'].map(em => (
+            <button key={em}
+              onClick={() => insertEmoji(em)}
+              className="w-8 h-8 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center text-sm border border-white/10 hover:scale-110 transition-transform cursor-pointer">
+              {em}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Floating Reactions ── */}
+      <FloatingReactions externalTrigger={floatTrigger} />
+
+      {/* ────────────────────────────────────────────────────────────────────────
+          MESAJ OVERLAY — video üzerinde şeffaf şerit
+          • bg: çok hafif siyah/lacivert, arkadaki videoyu kapatmaz
+          • pointer-events-none: video kontrollerine engel olmaz
+          • rumuz alt satırda gösterilir
+      ─────────────────────────────────────────────────────────────────────── */}
+      <div
+        className="absolute left-0 bottom-[56px] z-20 pointer-events-none"
+        style={{ width: 'min(68%, 380px)' }}
+      >
+        <AnimatePresence initial={false}>
+          {messages.slice(-MAX_OVERLAY_MSGS).map(msg => {
+            const isSelf = msg.sender_id === user?.id;
+            return (
+              <motion.div
+                key={msg.id}
+                initial={{ opacity: 0, x: -12, y: 4 }}
+                animate={{ opacity: 1, x: 0, y: 0 }}
+                exit={{ opacity: 0, y: -8, transition: { duration: 0.35 } }}
+                transition={{ duration: 0.2 }}
+                className="mx-3 mb-1 flex items-start gap-2 rounded-xl px-3 py-1.5"
+                style={{
+                  // ← şeffaf overlay: arka plan %28 siyah, arkadaki video görünür kalır
+                  background: 'rgba(0, 4, 18, 0.28)',
+                  backdropFilter: 'blur(3px)',
+                  WebkitBackdropFilter: 'blur(3px)',
+                  border: '1px solid rgba(255,255,255,0.06)',
+                }}
+              >
+                {/* Avatar */}
+                {!msg.is_system_message && (
+                  <span
+                    className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold mt-0.5"
+                    style={{ background: msg.sender_color + '28', color: msg.sender_color }}
+                  >
+                    {(msg.sender_rumuz ?? msg.sender_name).charAt(0).toUpperCase()}
+                  </span>
+                )}
+
+                <div className="min-w-0 flex-1">
+                  {msg.is_system_message ? (
+                    <span className="text-[11px] font-mono" style={{ color: msg.sender_color }}>
+                      ⚡ {msg.message}
+                    </span>
+                  ) : (
+                    <>
+                      {/* Mesaj satırı */}
+                      <div className="flex items-baseline gap-1.5 flex-wrap">
+                        <span className="text-[11px] font-bold shrink-0" style={{ color: msg.sender_color }}>
+                          {displayName(msg, isSelf)}:
+                        </span>
+                        <span className="text-white/85 text-[11px] break-words leading-snug">
+                          {msg.message}
+                        </span>
+                      </div>
+                      {/* Rumuz alt satır — sadece rumuz varsa ve sender_name'den farklıysa */}
+                      {msg.sender_rumuz && msg.sender_rumuz !== msg.sender_name && !isSelf && (
+                        <div className="text-[9px] font-mono mt-0.5" style={{ color: msg.sender_color + 'aa' }}>
+                          @{msg.sender_rumuz}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </motion.div>
+            );
+          })}
+        </AnimatePresence>
+      </div>
+
+      {/* ── Chat giriş kutusu ──────────────────────────────────────────────────── */}
+      <div
+        className="absolute bottom-0 left-0 right-0 z-30 px-3 py-2.5"
+        style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.80) 75%, transparent)' }}
+      >
+        {/* Hata mesajı */}
+        <AnimatePresence>
+          {sendError && (
+            <motion.div
+              initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+              className="mb-1.5 px-3 py-1.5 rounded-lg text-[11px] font-mono text-red-300 flex items-center gap-1.5"
+              style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.25)' }}
+            >
+              <i className="fas fa-exclamation-circle text-red-400 text-[10px]" />
+              {sendError}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {user ? (
+          <div className="flex items-center gap-2">
+            {/* Avatar */}
+            <div
+              className="w-7 h-7 rounded-full shrink-0 flex items-center justify-center text-[11px] font-bold"
+              style={{ background: '#D4AF3728', color: '#D4AF37' }}
+            >
+              {(profile?.rumuz ??
+                profile?.full_name ?? profile?.company_name ?? 'S')
+                .charAt(0).toUpperCase()}
+            </div>
+
+            {/* Input + Emoji picker */}
+            <div className="relative flex-1">
+              <input
+                ref={inputRef}
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={handleKey}
+                placeholder="Mesaj yaz… 😊"
+                maxLength={200}
+                disabled={sending}
+                className="w-full rounded-xl pl-3 pr-8 py-2 text-white text-[12px] font-mono placeholder-white/30 focus:outline-none transition-colors disabled:opacity-50"
+                style={{
+                  background: 'rgba(0,0,0,0.50)',
+                  border: '1px solid rgba(255,255,255,0.12)',
+                }}
+                onFocus={e => (e.target.style.borderColor = 'rgba(212,175,55,0.55)')}
+                onBlur={e => (e.target.style.borderColor = 'rgba(255,255,255,0.12)')}
+              />
+              {/* Emoji tetikleyici — input içi sağ */}
+              <button
+                type="button"
+                onClick={() => setShowEmoji(s => !s)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-base leading-none cursor-pointer hover:scale-125 transition-transform"
+                title="Emoji ekle"
+              >
+                😊
+              </button>
+
+              {/* Emoji picker popup */}
+              {showEmoji && (
+                <div
+                  ref={emojiRef}
+                  className="absolute bottom-[calc(100%+8px)] left-0 z-50 rounded-2xl p-3 grid grid-cols-6 gap-1.5"
+                  style={{
+                    background: 'rgba(10,14,26,0.96)',
+                    border: '1px solid rgba(42,54,80,0.9)',
+                    backdropFilter: 'blur(12px)',
+                    boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+                    width: '220px',
+                  }}
+                >
+                  {EMOJI_LIST.map(em => (
+                    <button
+                      key={em}
+                      type="button"
+                      onClick={() => { insertEmoji(em); setShowEmoji(false); }}
+                      className="w-8 h-8 rounded-lg flex items-center justify-center text-lg cursor-pointer transition-all hover:scale-125 hover:bg-white/10"
+                      title={em}
+                    >
+                      {em}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Gönder butonu */}
+            <button
+              onClick={sendMessage}
+              disabled={!input.trim() || sending}
+              className="w-9 h-9 rounded-xl shrink-0 flex items-center justify-center cursor-pointer transition-all hover:scale-105 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
+              style={{ background: 'linear-gradient(135deg,#D4AF37,#F5D76E)' }}
+              aria-label="Gönder"
+            >
+              {sending
+                ? <i className="fas fa-spinner fa-spin text-black text-xs" />
+                : <i className="fas fa-paper-plane text-black text-xs" />}
+            </button>
+          </div>
+        ) : (
+          /* Giriş yapılmamış */
+          <div className="flex items-center justify-center gap-2 py-1">
+            <i className="fas fa-lock text-[#D4AF37] text-xs" />
+            <span className="text-white/55 text-[12px] font-mono">
+              Sohbete katılmak için{' '}
+              <span className="text-[#D4AF37] font-bold cursor-pointer hover:underline"
+                onClick={() => document.dispatchEvent(new CustomEvent('openAuthModal', { detail: 'login' }))}>
+                giriş yapın
+              </span>
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Sağ alt: yayın kalitesi — sadece eski/genel (dekoratif video'lu) modda anlamlı */}
+      {!storeId && (
+        <div className="absolute bottom-14 right-3 z-20">
+          <div className="rounded-lg px-3 py-2" style={{ background: 'rgba(0,0,0,0.40)', border: '1px solid rgba(42,54,80,0.6)', backdropFilter: 'blur(4px)' }}>
+            <p className="text-[9px] text-[#5E7090] font-mono">YAYIN KALİTESİ</p>
+            <p className="text-[11px] text-[#10B981] font-mono font-bold">● STABLE</p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Floating Reactions ────────────────────────────────────────────────────────
+interface FloatProps {
+  externalTrigger?: { emoji: string; id: number } | null;
+}
+function FloatingReactions({ externalTrigger }: FloatProps) {
+  const [reactions, setReactions] = useState<{ id: number; emoji: string; x: number }[]>([]);
+
+  // Otomatik random reactions
+  useEffect(() => {
+    const emojis = ['❤️', '🔥', '😍', '👏', '💰', '🎉', '⭐', '💎'];
+    const iv = setInterval(() => {
+      setReactions(prev => [
+        ...prev.slice(-8),
+        { id: Date.now(), emoji: emojis[Math.floor(Math.random() * emojis.length)], x: 85 + Math.random() * 10 },
+      ]);
+    }, 2000 + Math.random() * 2000);
+    return () => clearInterval(iv);
+  }, []);
+
+  // Kullanıcı emoji seçince ekstra reaction uçsun
+  useEffect(() => {
+    if (!externalTrigger) return;
+    setReactions(prev => [
+      ...prev.slice(-8),
+      { id: externalTrigger.id,     emoji: externalTrigger.emoji, x: 80 + Math.random() * 15 },
+      { id: externalTrigger.id + 1, emoji: externalTrigger.emoji, x: 83 + Math.random() * 12 },
+    ]);
+  }, [externalTrigger]);
+
+  return (
+    <div className="absolute inset-0 overflow-hidden pointer-events-none z-10">
+      {reactions.map(r => (
+        <span key={r.id} className="absolute text-lg select-none"
+          style={{ left: `${r.x}%`, bottom: '15%', animation: 'float 3s ease-out forwards' }}>
+          {r.emoji}
+        </span>
+      ))}
+    </div>
+  );
+}

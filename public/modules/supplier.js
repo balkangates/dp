@@ -24,6 +24,8 @@ let myId = null;
 let activeTab = 'auctions';
 let myCatalogProducts = [];
 let categories = [];
+let sectors = [];
+let subcategories = [];
 
 // Önceden BÜTÜN platformdaki bütün aktif reverse_auctions'lar HER
 // tedarikçiye gösteriliyordu — kendi ürün kategorisiyle hiç alakası
@@ -70,8 +72,18 @@ async function fetchMyCatalogProducts() {
   return data || [];
 }
 
+async function fetchSectors() {
+  const { data } = await sb.from('sectors').select('id,label').eq('is_active', true).order('sort_order');
+  return data || [];
+}
+
 async function fetchCategories() {
-  const { data } = await sb.from('categories').select('id,name').eq('is_active', true).order('name');
+  const { data } = await sb.from('categories').select('id,name,sector_id').eq('is_active', true).order('name');
+  return data || [];
+}
+
+async function fetchSubcategories() {
+  const { data } = await sb.from('subcategories').select('id,name,category_id').eq('is_active', true).order('name');
   return data || [];
 }
 
@@ -248,10 +260,23 @@ function renderProposeTab() {
       </div>
       <label style="font-size:11px;color:var(--muted2)">Ürün Adı</label>
       <input id="npName" style="width:100%;margin-bottom:8px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:8px;border-radius:8px" />
-      <label style="font-size:11px;color:var(--muted2)">Kategori</label>
-      <select id="npCategory" style="width:100%;margin-bottom:8px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:8px;border-radius:8px">
-        ${categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}
+
+      <label style="font-size:11px;color:var(--muted2)">Sektör</label>
+      <select id="npSector" style="width:100%;margin-bottom:8px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:8px;border-radius:8px">
+        <option value="">Sektör seçin…</option>
+        ${sectors.map(s => `<option value="${s.id}">${s.label}</option>`).join('')}
       </select>
+
+      <label style="font-size:11px;color:var(--muted2)">Kategori</label>
+      <select id="npCategory" style="width:100%;margin-bottom:8px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:8px;border-radius:8px" disabled>
+        <option value="">Önce sektör seçin…</option>
+      </select>
+
+      <label style="font-size:11px;color:var(--muted2)">Alt Kategori</label>
+      <select id="npSubcategory" style="width:100%;margin-bottom:8px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:8px;border-radius:8px" disabled>
+        <option value="">Önce kategori seçin…</option>
+      </select>
+
       <label style="font-size:11px;color:var(--muted2)">Teklif Fiyatı (₺)</label>
       <input id="npPrice" type="number" min="0" style="width:100%;margin-bottom:12px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:8px;border-radius:8px" />
       <button class="btn btn-gold" id="npSubmit" style="width:100%;justify-content:center"><i class="fas fa-paper-plane"></i> Onaya Gönder</button>
@@ -386,13 +411,39 @@ async function render(container, ctx) {
   }
 
   if (activeTab === 'propose') {
+    const sectorEl = body.querySelector('#npSector');
+    const categoryEl = body.querySelector('#npCategory');
+    const subcategoryEl = body.querySelector('#npSubcategory');
+
+    const fillCategories = (sectorId) => {
+      const opts = categories.filter(c => c.sector_id === sectorId);
+      categoryEl.innerHTML = opts.length
+        ? `<option value="">Kategori seçin…</option>${opts.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}`
+        : `<option value="">Bu sektörde kategori yok</option>`;
+      categoryEl.disabled = opts.length === 0;
+      subcategoryEl.innerHTML = `<option value="">Önce kategori seçin…</option>`;
+      subcategoryEl.disabled = true;
+    };
+    const fillSubcategories = (categoryId) => {
+      const opts = subcategories.filter(s => s.category_id === categoryId);
+      subcategoryEl.innerHTML = opts.length
+        ? `<option value="">Alt kategori seçin (opsiyonel)</option>${opts.map(s => `<option value="${s.id}">${s.name}</option>`).join('')}`
+        : `<option value="">Bu kategoride alt kategori yok</option>`;
+      subcategoryEl.disabled = opts.length === 0;
+    };
+
+    sectorEl.onchange = () => fillCategories(sectorEl.value);
+    categoryEl.onchange = () => fillSubcategories(categoryEl.value);
+
     body.querySelector('#npSubmit').onclick = () => {
       const name = body.querySelector('#npName').value.trim();
-      const category_id = body.querySelector('#npCategory').value;
+      const category_id = categoryEl.value;
+      const subcategory_id = subcategoryEl.value || null;
       const suggested_price = Number(body.querySelector('#npPrice').value);
       if (!name) return alert('Ürün adı gerekli.');
+      if (!category_id) return alert('Sektör ve kategori seçin.');
       if (!suggested_price || suggested_price <= 0) return alert('Geçerli bir fiyat girin.');
-      proposeNewProduct({ name, category_id, suggested_price }, container, ctx);
+      proposeNewProduct({ name, category_id, subcategory_id, suggested_price }, container, ctx);
     };
   }
 }
@@ -406,7 +457,9 @@ registerModule({
     sb = ctx.sb;
     myId = ctx.profile.id;
     activeTab = 'auctions';
-    [myCatalogProducts, categories] = await Promise.all([fetchMyCatalogProducts(), fetchCategories()]);
+    [myCatalogProducts, categories, sectors, subcategories] = await Promise.all([
+      fetchMyCatalogProducts(), fetchCategories(), fetchSectors(), fetchSubcategories(),
+    ]);
     await render(container, ctx);
   },
   unmount() {
